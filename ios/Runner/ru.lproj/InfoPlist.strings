@@ -1,0 +1,4 @@
+/* Russian display name — what she sees and what Siri answers to. */
+"CFBundleDisplayName" = "Звонилка";
+"NSMicrophoneUsageDescription" = "Микрофон нужен для звонков";
+"NSCameraUsageDescription" = "Камера нужна для видеозвонков";

@@ -1,0 +1,77 @@
+{
+  "@@locale": "en",
+  "appTitle": "Freecaller",
+  "activationTitle": "Activation",
+  "activationPrompt": "Enter the activation code",
+  "activationHint": "Six-digit code",
+  "activationSubmit": "Activate",
+  "activationInvalid": "Invalid or already used code",
+  "activationNetworkError": "No connection. Try again",
+  "homeNoContacts": "No contacts yet. Ask your admin",
+  "callContact": "Call {name}",
+  "@callContact": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "dialing": "Calling {name}…",
+  "@dialing": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "inCallWith": "In call with {name}",
+  "@inCallWith": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "hangUp": "Hang up",
+  "callDeclined": "{name} can't answer now",
+  "@callDeclined": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "callNoAnswer": "{name} isn't answering",
+  "@callNoAnswer": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "callFailed": "Call failed. Try again",
+  "missedCallFrom": "Missed call: {name}",
+  "@missedCallFrom": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "callEnded": "Call ended",
+  "voiceCall": "Voice call",
+  "videoCall": "Video call",
+  "cancel": "Back",
+  "whomToCall": "How to call {name}?",
+  "@whomToCall": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "speakerOn": "Turn on speaker",
+  "speakerOff": "Turn off speaker",
+  "switchCamera": "Switch camera",
+  "swapVideo": "Swap videos"
+}

@@ -1,0 +1,77 @@
+{
+  "@@locale": "ru",
+  "appTitle": "Звонилка",
+  "activationTitle": "Активация",
+  "activationPrompt": "Введите код активации",
+  "activationHint": "Код из шести цифр",
+  "activationSubmit": "Активировать",
+  "activationInvalid": "Неверный или использованный код",
+  "activationNetworkError": "Нет связи. Попробуйте ещё раз",
+  "homeNoContacts": "Нет контактов. Обратитесь к администратору",
+  "callContact": "Позвонить {name}",
+  "@callContact": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "dialing": "Звоним {name}…",
+  "@dialing": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "inCallWith": "Разговор с {name}",
+  "@inCallWith": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "hangUp": "Положить трубку",
+  "callDeclined": "{name} не может ответить",
+  "@callDeclined": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "callNoAnswer": "{name} не отвечает",
+  "@callNoAnswer": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "callFailed": "Не удалось позвонить. Попробуйте ещё раз",
+  "missedCallFrom": "Пропущенный звонок: {name}",
+  "@missedCallFrom": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "callEnded": "Звонок завершён",
+  "voiceCall": "Обычный звонок",
+  "videoCall": "Видеозвонок",
+  "cancel": "Назад",
+  "whomToCall": "Как позвонить {name}?",
+  "@whomToCall": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "speakerOn": "Включить громкую связь",
+  "speakerOff": "Выключить громкую связь",
+  "switchCamera": "Сменить камеру",
+  "swapVideo": "Поменять видео местами"
+}

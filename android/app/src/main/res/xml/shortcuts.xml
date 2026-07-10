@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Best-effort voice-assistant hook (App Actions are sunsetting into
+     Gemini App Functions; this covers assistants that still honor
+     CREATE_CALL capabilities). iOS Siri is the primary voice path. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <capability android:name="actions.intent.CREATE_CALL">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.unnanego.freecaller"
+            android:targetClass="com.unnanego.freecaller.MainActivity">
+            <parameter
+                android:name="call.participant.name"
+                android:key="contactName" />
+        </intent>
+    </capability>
+</shortcuts>
