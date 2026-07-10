@@ -19,10 +19,10 @@ corner feed to swap which video is full screen).
 
 ## Stack
 
-Flutter + LiveKit Cloud (media) + Firebase (Firestore signaling, Cloud
-Functions for LiveKit tokens & call pushes, custom-token auth) +
-`flutter_callkit_incoming`. APNs VoIP push (PushKit) on iOS, FCM
-high-priority data on Android. Runs at $0/month at family scale.
+Flutter + self-hosted LiveKit (open-source WebRTC SFU + TURN, media) +
+Firebase (Firestore signaling, Cloud Functions for LiveKit tokens & call
+pushes, custom-token auth) + `flutter_callkit_incoming`. APNs VoIP push
+(PushKit) on iOS, FCM high-priority data on Android. All your own infra.
 
 ## Repo map
 
@@ -33,6 +33,7 @@ high-priority data on Android. Runs at $0/month at family scale.
 | `ios/SiriIntents/` | SiriKit Intents extension (INStartCallIntent) |
 | `functions/` | Cloud Functions: activation, LiveKit tokens, push dispatch, stale-call sweep |
 | `tools/admin.ts` | Family roster provisioning CLI |
+| `deploy/livekit/` | Self-hosted LiveKit media server (Docker Compose) |
 | `docs/SETUP.md` | One-time infra setup (Firebase, LiveKit, APNs, Xcode targets) |
 | `docs/RUNBOOK.md` | Ops: LiveKit cap, push debugging, roster changes |
 

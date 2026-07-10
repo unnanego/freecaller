@@ -1,24 +1,21 @@
 # Runbook
 
-## LiveKit free-tier cap (the one failure mode to watch)
+## LiveKit media server (self-hosted)
 
-The Build tier allows **5000 participant-minutes/month** (a 1:1 call burns
-2/min, so ≈83 minutes of calling per day) and **fails closed**: when
-exhausted, new connections are refused until the month rolls over — grandma's
-call just won't connect.
+Runs on your VPS via `deploy/livekit/` (Docker Compose: livekit-server +
+redis + caddy). Deploy/upgrade and firewall details are in that directory's
+README.
 
-Video also consumes the **50 GB/month egress** allowance: 1:1 video at 540p
-is roughly 0.25–0.3 GB/hour per subscriber, so ~150+ hours/month — the
-minute cap will always bite first.
-
-- Set a usage alert at ~70% in the LiveKit Cloud dashboard.
-- **Escape hatch** (pre-planned, ~$6/month): self-host LiveKit OSS on a
-  small VPS (Hetzner/DO) with its embedded TURN enabled. Client code is
-  identical — only `LIVEKIT_URL` + key secrets in the functions config
-  change. Open UDP 50000–60000 and 443/TCP (TURN/TLS), TLS cert via
-  Let's Encrypt.
-- Alternative if you'd rather stay managed: Agora (~$1 per 1000 minutes
-  overage) — but that's a client-code change, unlike self-hosting.
+- **If calls connect but have no audio/video**: almost always a firewall /
+  port issue. Check that UDP 50000–60000 and 3478, and TCP 443 and 7881,
+  are open on the VPS. `docker compose logs livekit` shows ICE failures.
+- **Upgrade**: `docker compose pull && docker compose up -d`.
+- **Capacity**: audio + family-scale video is trivial CPU; watch the VPS's
+  monthly bandwidth instead (video ≈ 0.3 GB/hour per participant of egress).
+- **Cert renewal** is automatic (Caddy). If TURN/TLS breaks after ~90 days,
+  check Caddy logs and that port 80 was reachable for the renewal challenge.
+- Managed fallback if you ever want off-box: LiveKit Cloud is a drop-in —
+  only `LIVEKIT_URL` + the two key secrets change, no app code.
 
 ## Push debugging
 

@@ -1,0 +1,42 @@
+# Copy to caddy.yaml and replace the domain. Routes :443 by SNI:
+#   livekit.YOURDOMAIN.com      → WSS signaling (livekit :7880)
+#   livekit-turn.YOURDOMAIN.com → TURN/TLS (livekit :5349)
+# Both hostnames need A records pointing at this server.
+logging:
+  logs:
+    default:
+      level: INFO
+storage:
+  module: file_system
+  root: /data
+apps:
+  tls:
+    certificates:
+      automate:
+        - livekit.YOURDOMAIN.com
+        - livekit-turn.YOURDOMAIN.com
+  layer4:
+    servers:
+      main:
+        listen:
+          - ":443"
+        routes:
+          - match:
+              - tls:
+                  sni:
+                    - livekit-turn.YOURDOMAIN.com
+            handle:
+              - handler: tls
+                connection_policies:
+                  - alpn: [""]
+              - handler: proxy
+                upstreams:
+                  - dial: ["127.0.0.1:5349"]
+          - match:
+              - tls:
+                  sni:
+                    - livekit.YOURDOMAIN.com
+            handle:
+              - handler: proxy
+                upstreams:
+                  - dial: ["127.0.0.1:7880"]

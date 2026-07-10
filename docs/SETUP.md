@@ -22,15 +22,21 @@ change consistently in `ios/Runner/AppDelegate.swift`,
 5. Deploy rules + functions:
    `firebase deploy --only firestore:rules,functions`.
 
-## 2. LiveKit Cloud
+## 2. LiveKit (self-hosted media server)
 
-1. Create a project at cloud.livekit.io (free Build tier).
-2. Set function config:
-   - secrets: `firebase functions:secrets:set LIVEKIT_API_KEY`,
-     `firebase functions:secrets:set LIVEKIT_API_SECRET`
-   - params (in `functions/.env`): `LIVEKIT_URL=wss://<project>.livekit.cloud`
-3. **Set a usage alert** in the LiveKit dashboard — the free tier hard-caps
-   at 5000 participant-minutes/month and fails closed (see RUNBOOK.md).
+The media/SFU + TURN server runs on your own VPS. Full recipe (Docker
+Compose, domain, firewall) in [`deploy/livekit/README.md`](../deploy/livekit/README.md).
+In short: stand up the server, generate an API key/secret, then:
+
+```bash
+firebase functions:secrets:set LIVEKIT_API_KEY
+firebase functions:secrets:set LIVEKIT_API_SECRET
+echo 'LIVEKIT_URL=wss://livekit.YOURDOMAIN.com' >> functions/.env
+```
+
+No app code changes — `livekit_client` and `mintLiveKitToken` talk to any
+LiveKit server. (LiveKit Cloud's managed free tier is a drop-in alternative
+if you ever want it: same three values, `wss://<project>.livekit.cloud`.)
 
 ## 3. APNs VoIP push (iOS incoming calls)
 

@@ -11,7 +11,7 @@ A dead-simple family calling app for a blind, 73-year-old, Russian-only-speaking
 | Layer | Choice |
 |---|---|
 | App | Flutter, one codebase (mobile now, web stage 2) |
-| Media | LiveKit Cloud free tier, `livekit_client` ~2.8 (iOS/Android/web; group call = same room, more people) |
+| Media | Self-hosted LiveKit (open-source SFU + TURN) on the user's VPS via `deploy/livekit/`; `livekit_client` ~2.8 (iOS/Android/web; group call = same room, more people). Managed LiveKit Cloud is a drop-in fallback. |
 | Native call UI | `flutter_callkit_incoming` ~3.1.3 — iOS CallKit (incoming via PushKit, outgoing via CXStartCallAction); Android full-screen CallStyle notification + self-managed ConnectionService |
 | Push | iOS: APNs VoIP push (PushKit, direct to APNs, .p8 key, topic `<bundle>.voip`); Android: FCM high-priority data message; both sent from Cloud Functions |
 | Backend | Firebase: Firestore (roster + call docs), Cloud Functions TS (LiveKit JWT minting, push dispatch, missed-call sweep), Auth via custom tokens (activation-code redemption) |
