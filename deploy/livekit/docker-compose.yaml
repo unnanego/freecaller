@@ -1,6 +1,7 @@
-# Single-node self-hosted LiveKit for Freecaller.
-# host networking is used so the media (UDP) ports are reachable directly.
-# See README.md for the full setup (domain, firewall, keys).
+# Single-node self-hosted LiveKit for Freecaller, behind your existing nginx.
+# nginx terminates TLS and reverse-proxies WSS signaling to livekit :7880;
+# media flows directly to the server's public IP (see README.md).
+# host networking so the media UDP/TCP ports are reachable directly.
 services:
   redis:
     image: redis:7-alpine
@@ -17,18 +18,3 @@ services:
       - ./livekit.yaml:/etc/livekit.yaml
     depends_on:
       - redis
-
-  # Terminates TLS on :443 for both WSS signaling and TURN/TLS, using
-  # automatic Let's Encrypt certs. livekit/caddyl4 is Caddy + the layer4
-  # plugin, the image LiveKit ships for exactly this.
-  caddy:
-    image: livekit/caddyl4:latest
-    restart: unless-stopped
-    network_mode: host
-    command: run --config /etc/caddy.yaml --adapter yaml
-    volumes:
-      - ./caddy.yaml:/etc/caddy.yaml
-      - caddy_data:/data
-
-volumes:
-  caddy_data:

@@ -1,0 +1,30 @@
+# LiveKit WSS signaling proxy — add to your nginx (e.g.
+# /etc/nginx/sites-available/livekit.conf) and reload.
+#
+# The livekit.YOURDOMAIN.com subdomain must be covered by an SSL cert. If
+# your existing cert is single-host, add the subdomain:
+#   certbot --nginx -d livekit.YOURDOMAIN.com
+# (a wildcard cert already covers it).
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name livekit.YOURDOMAIN.com;
+
+    ssl_certificate     /etc/letsencrypt/live/livekit.YOURDOMAIN.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/livekit.YOURDOMAIN.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:7880;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # WebSocket connections are long-lived.
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+}

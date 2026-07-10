@@ -59,4 +59,3 @@ ios/Runner/GoogleService-Info.plist
 
 # Self-hosted LiveKit — real configs hold the API secret / domain
 deploy/livekit/livekit.yaml
-deploy/livekit/caddy.yaml

@@ -1,8 +1,13 @@
 # Copy to livekit.yaml and fill in. livekit.yaml is gitignored (holds the
 # API secret). Generate a key/secret pair with:
 #   docker run --rm livekit/livekit-server generate-keys
+#
+# Signaling (port 7880) is proxied by nginx over WSS and is NOT exposed on
+# the firewall. Media reaches the server directly on the UDP range + TCP
+# fallback below.
 port: 7880
 rtc:
+  # TCP fallback for clients whose network blocks UDP.
   tcp_port: 7881
   port_range_start: 50000
   port_range_end: 60000
@@ -12,11 +17,8 @@ redis:
 keys:
   # APIxxxxxxxxxxxx: <secret from generate-keys>
   REPLACE_API_KEY: REPLACE_API_SECRET
+# No embedded TURN: the SFU has a public IP, so direct UDP media + the TCP
+# fallback cover home wifi and cellular. (If a user is ever on a network
+# that blocks everything but TCP 443, see README "Restrictive networks".)
 turn:
-  enabled: true
-  # Must match the domain whose A record points at this server.
-  domain: livekit.YOURDOMAIN.com
-  tls_port: 5349
-  udp_port: 3478
-  # Caddy owns the cert; LiveKit relays TURN/TLS through it.
-  external_tls: true
+  enabled: false
