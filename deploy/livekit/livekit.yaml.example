@@ -1,6 +1,7 @@
-# Copy to livekit.yaml and fill in. livekit.yaml is gitignored (holds the
-# API secret). Generate a key/secret pair with:
-#   docker run --rm livekit/livekit-server generate-keys
+# Copy to /etc/livekit/livekit.yaml and fill in. Holds the API secret —
+# keep it off git and readable only by the livekit user.
+# Generate a key/secret pair with:
+#   livekit-server generate-keys
 #
 # Signaling (port 7880) is proxied by nginx over WSS and is NOT exposed on
 # the firewall. Media reaches the server directly on the UDP range + TCP
@@ -12,13 +13,10 @@ rtc:
   port_range_start: 50000
   port_range_end: 60000
   use_external_ip: true
-redis:
-  address: 127.0.0.1:6379
 keys:
   # APIxxxxxxxxxxxx: <secret from generate-keys>
   REPLACE_API_KEY: REPLACE_API_SECRET
 # No embedded TURN: the SFU has a public IP, so direct UDP media + the TCP
-# fallback cover home wifi and cellular. (If a user is ever on a network
-# that blocks everything but TCP 443, see README "Restrictive networks".)
+# fallback cover home wifi and cellular. (Single-node needs no redis.)
 turn:
   enabled: false

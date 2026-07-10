@@ -1,0 +1,18 @@
+# systemd unit for the native LiveKit server. Install to
+# /etc/systemd/system/livekit.service (see README.md).
+[Unit]
+Description=LiveKit Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=livekit
+Group=livekit
+ExecStart=/usr/local/bin/livekit-server --config /etc/livekit/livekit.yaml
+Restart=on-failure
+RestartSec=5
+# WebRTC opens many UDP sockets.
+LimitNOFILE=500000
+
+[Install]
+WantedBy=multi-user.target

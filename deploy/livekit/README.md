@@ -1,8 +1,9 @@
-# Self-hosted LiveKit for Freecaller (behind nginx)
+# Self-hosted LiveKit for Freecaller (native + nginx)
 
-Runs the open-source LiveKit media server (SFU) on your own VPS, with your
-existing nginx terminating TLS for the signaling connection. Handles 1:1
-and group calls; the Flutter app and Cloud Functions are identical to the
+Runs the open-source LiveKit media server (SFU) natively as a systemd
+service on your own VPS, with your existing nginx terminating TLS for the
+signaling connection. No Docker (lighter on a small box). Handles 1:1 and
+group calls; the Flutter app and Cloud Functions are identical to the
 managed-cloud path — only the URL and keys differ.
 
 ## How the pieces connect
@@ -15,34 +16,43 @@ managed-cloud path — only the URL and keys differ.
 
 ## Prerequisites
 
-- A VPS with root + Docker + Docker Compose.
+- A VPS with root.
 - An A record `livekit.YOURDOMAIN.com` → the VPS public IP, covered by an
   SSL cert (wildcard already covers it; otherwise
   `certbot --nginx -d livekit.YOURDOMAIN.com`).
-- Firewall open for:
+- Reachable (firewall/security group) for:
   - **443/tcp** — already open for your site (nginx)
   - **7881/tcp** — WebRTC TCP fallback
   - **50000-60000/udp** — WebRTC media
 
-## Setup
+## Install the server
 
 ```bash
-# on the VPS, in this deploy/livekit directory
-cp livekit.yaml.example livekit.yaml
+# fetch the latest livekit-server binary (linux amd64) from GitHub releases
+# into /usr/local/bin, then a dedicated service user + config dir
+useradd --system --no-create-home --shell /usr/sbin/nologin livekit
+mkdir -p /etc/livekit
+cp livekit.yaml.example /etc/livekit/livekit.yaml
 
-# generate an API key/secret pair; paste into livekit.yaml under `keys:`
-docker run --rm livekit/livekit-server generate-keys
+# generate an API key/secret pair; paste into /etc/livekit/livekit.yaml
+livekit-server generate-keys
 
-docker compose up -d
-docker compose logs -f livekit      # "starting LiveKit server"
+chown -R livekit:livekit /etc/livekit && chmod 600 /etc/livekit/livekit.yaml
+
+# systemd service
+cp livekit.service /etc/systemd/system/livekit.service
+systemctl daemon-reload
+systemctl enable --now livekit
+journalctl -u livekit -f      # "starting LiveKit server"
 ```
 
-Add the nginx server block and reload:
+## nginx (WSS signaling)
 
 ```bash
 cp nginx-livekit.conf.example /etc/nginx/sites-available/livekit.conf
-# edit: replace livekit.YOURDOMAIN.com; check the ssl_certificate paths
+# edit: replace livekit.YOURDOMAIN.com
 ln -s /etc/nginx/sites-available/livekit.conf /etc/nginx/sites-enabled/
+certbot --nginx -d livekit.YOURDOMAIN.com     # issues cert + wires SSL in
 nginx -t && systemctl reload nginx
 ```
 
@@ -66,20 +76,19 @@ to it.
 
 ## Sizing
 
-Audio + family-scale video is trivial CPU; the smallest VPS (1 vCPU / 1 GB)
-is plenty. Video is ~0.3 GB/hour per participant of egress — watch the VPS
-bandwidth allowance, not CPU.
+Audio + family-scale video is trivial CPU; ~256–512 MB RAM is enough for a
+handful of participants (add swap on a small box). Video is ~0.3 GB/hour per
+participant of egress — watch the VPS bandwidth allowance.
 
 ## Restrictive networks (only if calls ever fail to connect on some network)
 
 Direct UDP + TCP 7881 covers home wifi and cellular. If a family member is
-on a network that blocks everything except TCP 443 (some corporate/hotel
-wifi), add TURN/TLS. Because nginx owns 443, the clean way is a second IP
-or the nginx `stream` module to SNI-route TURN — open an issue and we'll
-wire it then. Not needed for the common case.
+on a network that blocks everything except TCP 443, add TURN/TLS. Because
+nginx owns 443, the clean way is a second IP or the nginx `stream` module to
+SNI-route TURN — open an issue and we'll wire it then. Not needed for the
+common case.
 
-## Notes
+## Upgrade
 
-- `livekit.yaml` holds the API secret and is gitignored — keep it only on
-  the server (and the secret in Firebase secrets).
-- Upgrade: `docker compose pull && docker compose up -d`.
+Replace `/usr/local/bin/livekit-server` with the new binary and
+`systemctl restart livekit`.
