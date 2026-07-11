@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
 import 'package:livekit_client/livekit_client.dart';
@@ -6,13 +8,14 @@ import 'package:proximity_sensor/proximity_sensor.dart';
 import '../data/contact_discovery.dart';
 import '../services/call_engine.dart';
 import '../services/livekit_service.dart';
+import 'theme/modernist.dart';
 
-/// Shown while dialing or in a call.
+/// Shown while dialing or in a call, in the Modernist system.
 ///
-/// Voice call: status + a giant speaker toggle + a giant hang-up bar.
-/// Video call, Google-Meet style: the active feed is full screen (remote by
-/// default), the other floats in a corner — tap it to swap; plus camera
-/// switch. The hang-up bar is always in the same place.
+/// Voice: a centered avatar/name/timer block over a light ground with a control
+/// tray (mute, speaker) and a compact End button. Video: the active feed fills
+/// the dark area with the other feed floating bottom-right (tap to swap); the
+/// tray holds mute + camera flip, End below.
 class InCallScreen extends StatefulWidget {
   const InCallScreen({
     super.key,
@@ -31,6 +34,8 @@ class InCallScreen extends StatefulWidget {
 
 class _InCallScreenState extends State<InCallScreen> {
   bool _localFullscreen = false;
+  Timer? _timer;
+  int _seconds = 0;
 
   CallEngine get engine => widget.engine;
   LiveKitService get livekit => widget.livekit;
@@ -47,12 +52,28 @@ class _InCallScreenState extends State<InCallScreen> {
 
   @override
   void dispose() {
+    _timer?.cancel();
     ProximitySensor.setProximityScreenOff(false).catchError((Object _) {});
     super.dispose();
   }
 
+  /// Start the mm:ss timer the first time we observe the connected state.
+  void _ensureTimer() {
+    if (_timer != null || engine.phase != EnginePhase.inCall) return;
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _seconds++);
+    });
+  }
+
+  String get _elapsed {
+    final m = (_seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (_seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
   @override
   Widget build(BuildContext context) {
+    _ensureTimer();
     final loc = AppLocalizations.of(context)!;
     final session = engine.session;
     // Prefer the name from the user's own address book over the server name.
@@ -60,247 +81,296 @@ class _InCallScreenState extends State<InCallScreen> {
         ? ''
         : widget.names.resolve(session.peerUid, session.peerName);
     final isVideo = session?.isVideo ?? false;
-    final status = engine.phase == EnginePhase.dialing
-        ? loc.dialing(name)
-        : loc.inCallWith(name);
+    final dialing = engine.phase == EnginePhase.dialing;
+    // Full spoken status for VoiceOver; the visual pieces are decoration.
+    final spoken = dialing ? loc.dialing(name) : loc.inCallWith(name);
+    final sub = dialing ? loc.connecting : _elapsed;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF102027),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: isVideo ? _videoArea(loc, status) : _voiceArea(loc, status),
-            ),
-            _hangUpBar(loc),
-          ],
-        ),
-      ),
+      backgroundColor: Mod.bg,
+      body: isVideo
+          ? _videoCall(loc, name, sub, spoken)
+          : _voiceCall(loc, name, sub, spoken),
     );
   }
 
   // ------------------------------------------------------------- voice call
 
-  Widget _voiceArea(AppLocalizations loc, String status) {
-    return Column(
-      children: [
-        Expanded(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                status,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 40,
-                  fontWeight: FontWeight.w700,
+  Widget _voiceCall(AppLocalizations loc, String name, String sub, String spoken) {
+    return SafeArea(
+      child: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: Semantics(
+                label: spoken,
+                child: ExcludeSemantics(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(loc.voiceCall.toUpperCase(), style: Mod.kicker()),
+                      const SizedBox(height: Mod.s6),
+                      InitialsTile(name: name, size: 132),
+                      const SizedBox(height: Mod.s6),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: Mod.s6),
+                        child: Text(name,
+                            textAlign: TextAlign.center, style: Mod.h1()),
+                      ),
+                      const SizedBox(height: Mod.s3),
+                      Text(sub,
+                          style: Mod.name(color: Mod.neutral700)
+                              .copyWith(fontSize: 18)),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-        SizedBox(
-          height: 140,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(child: _muteButton(loc)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: livekit.speakerOn,
-                    builder: (context, speaker, _) {
-                      final label = speaker ? loc.speakerOff : loc.speakerOn;
-                      return _controlButton(
-                        label: label,
-                        icon: speaker ? Icons.volume_up : Icons.volume_down,
-                        color: speaker ? const Color(0xFF1565C0) : const Color(0xFF37474F),
-                        onPressed: engine.toggleSpeaker,
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-
-  Widget _muteButton(AppLocalizations loc) {
-    final muted = engine.muted;
-    return _controlButton(
-      label: muted ? loc.unmute : loc.mute,
-      icon: muted ? Icons.mic_off : Icons.mic,
-      color: muted ? const Color(0xFFC62828) : const Color(0xFF37474F),
-      onPressed: engine.toggleMute,
-    );
-  }
-
-  Widget _controlButton({
-    required String label,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onPressed,
-  }) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: FilledButton.icon(
-        style: FilledButton.styleFrom(
-          backgroundColor: color,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        ),
-        onPressed: onPressed,
-        icon: ExcludeSemantics(child: Icon(icon, color: Colors.white, size: 40)),
-        label: ExcludeSemantics(
-          child: Text(label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 20, color: Colors.white)),
-        ),
+          _tray([_muteButton(loc), _speakerButton(loc)]),
+        ],
       ),
     );
   }
 
   // ------------------------------------------------------------- video call
 
-  Widget _videoArea(AppLocalizations loc, String status) {
-    return Stack(
-      fit: StackFit.expand,
+  Widget _videoCall(AppLocalizations loc, String name, String sub, String spoken) {
+    return Column(
       children: [
-        // Active (fullscreen) feed.
-        ValueListenableBuilder<VideoTrack?>(
-          valueListenable: _localFullscreen ? livekit.localVideo : livekit.remoteVideo,
-          builder: (context, track, _) =>
-              track != null ? VideoTrackRenderer(track) : const SizedBox.shrink(),
-        ),
-        Align(
-          alignment: Alignment.topCenter,
-          child: Container(
-            width: double.infinity,
-            color: const Color(0xAA102027),
-            padding: const EdgeInsets.all(12),
-            child: Text(
-              status,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 30,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-        // Floating corner feed — tap to make it fullscreen.
-        Align(
-          alignment: Alignment.bottomRight,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: ValueListenableBuilder<VideoTrack?>(
-              valueListenable:
-                  _localFullscreen ? livekit.remoteVideo : livekit.localVideo,
-              builder: (context, track, _) => track != null
-                  ? Semantics(
-                      button: true,
-                      label: loc.swapVideo,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: SizedBox(
-                          width: 110,
-                          height: 150,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              ExcludeSemantics(child: VideoTrackRenderer(track)),
-                              // The local camera's VideoTrackRenderer has its own
-                              // tap/pinch GestureDetector (focus/zoom) that wins
-                              // the tap over a wrapping one; an opaque overlay on
-                              // top intercepts it first so the swap fires.
-                              GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: () => setState(
-                                    () => _localFullscreen = !_localFullscreen),
-                              ),
-                            ],
-                          ),
+        Expanded(
+          child: ColoredBox(
+            color: Mod.neutral900,
+            child: SafeArea(
+              bottom: false,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Active (fullscreen) feed.
+                  ValueListenableBuilder<VideoTrack?>(
+                    valueListenable:
+                        _localFullscreen ? livekit.localVideo : livekit.remoteVideo,
+                    builder: (context, track, _) => track != null
+                        ? VideoTrackRenderer(track)
+                        : const SizedBox.shrink(),
+                  ),
+                  // Name + timer overlay, top-left.
+                  Positioned(
+                    top: Mod.s4,
+                    left: Mod.s6,
+                    right: Mod.s6,
+                    child: Semantics(
+                      label: spoken,
+                      child: ExcludeSemantics(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Mod.h2(color: const Color(0xFFF3F2F2))
+                                    .copyWith(fontSize: 21)),
+                            const SizedBox(height: 2),
+                            Text(sub,
+                                style: Mod.meta(
+                                    color: const Color(0xFFF3F2F2))),
+                          ],
                         ),
                       ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ),
-        ),
-        Align(
-          alignment: Alignment.bottomLeft,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Semantics(
-              button: true,
-              label: loc.switchCamera,
-              child: FloatingActionButton.large(
-                heroTag: null,
-                backgroundColor: const Color(0xDD37474F),
-                onPressed: engine.switchCamera,
-                child: const ExcludeSemantics(
-                  child: Icon(Icons.cameraswitch, color: Colors.white, size: 44),
-                ),
+                    ),
+                  ),
+                  // Floating corner feed — tap to swap.
+                  Positioned(
+                    right: Mod.s3,
+                    bottom: Mod.s3,
+                    child: _selfView(loc),
+                  ),
+                ],
               ),
             ),
           ),
         ),
-        Align(
-          alignment: Alignment.bottomCenter,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Semantics(
-              button: true,
-              label: engine.muted ? loc.unmute : loc.mute,
-              child: FloatingActionButton.large(
-                heroTag: null,
-                backgroundColor:
-                    engine.muted ? const Color(0xFFC62828) : const Color(0xDD37474F),
-                onPressed: engine.toggleMute,
-                child: ExcludeSemantics(
-                  child: Icon(engine.muted ? Icons.mic_off : Icons.mic,
-                      color: Colors.white, size: 44),
-                ),
-              ),
-            ),
-          ),
-        ),
+        _tray([_muteButton(loc), _flipButton(loc)]),
       ],
     );
   }
 
-  // ---------------------------------------------------------------- hang up
+  Widget _selfView(AppLocalizations loc) {
+    return ValueListenableBuilder<VideoTrack?>(
+      valueListenable: _localFullscreen ? livekit.remoteVideo : livekit.localVideo,
+      builder: (context, track, _) => track == null
+          ? const SizedBox.shrink()
+          : Semantics(
+              button: true,
+              label: loc.swapVideo,
+              child: Container(
+                width: 96,
+                height: 128,
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFF3F2F2), width: 2),
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ExcludeSemantics(child: VideoTrackRenderer(track)),
+                    // The local camera's renderer has its own tap/pinch detector
+                    // (focus/zoom); an opaque overlay on top wins the swap tap.
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () =>
+                          setState(() => _localFullscreen = !_localFullscreen),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
 
-  Widget _hangUpBar(AppLocalizations loc) {
+  // ---------------------------------------------------------------- controls
+
+  /// Light control tray with a top rule: a centered row of square controls and
+  /// the compact End button below.
+  Widget _tray(List<Widget> controls) {
+    final loc = AppLocalizations.of(context)!;
+    return Container(
+      decoration:
+          BoxDecoration(border: Border(top: BorderSide(color: Mod.divider, width: 2))),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(Mod.s6, Mod.s6, Mod.s6, Mod.s6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (final (i, c) in controls.indexed) ...[
+                    if (i > 0) const SizedBox(width: Mod.s8),
+                    c,
+                  ],
+                ],
+              ),
+              const SizedBox(height: Mod.s6),
+              _endButton(loc),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _muteButton(AppLocalizations loc) {
+    final muted = engine.muted;
+    return _TrayControl(
+      label: muted ? loc.unmute : loc.mute,
+      caption: muted ? loc.unmute : loc.mute,
+      icon: muted ? Icons.mic_off : Icons.mic,
+      active: muted,
+      onTap: engine.toggleMute,
+    );
+  }
+
+  Widget _speakerButton(AppLocalizations loc) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: livekit.speakerOn,
+      builder: (context, speaker, _) => _TrayControl(
+        label: speaker ? loc.speakerOff : loc.speakerOn,
+        caption: speaker ? loc.speakerOff : loc.speakerOn,
+        icon: speaker ? Icons.volume_up : Icons.volume_down,
+        active: speaker,
+        onTap: engine.toggleSpeaker,
+      ),
+    );
+  }
+
+  Widget _flipButton(AppLocalizations loc) {
+    return _TrayControl(
+      label: loc.switchCamera,
+      caption: loc.switchCamera,
+      icon: Icons.cameraswitch,
+      active: false,
+      onTap: engine.switchCamera,
+    );
+  }
+
+  Widget _endButton(AppLocalizations loc) {
     return Semantics(
       button: true,
       label: loc.hangUp,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SizedBox(
-          width: double.infinity,
-          height: 140,
-          child: FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFC62828),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(32),
+      child: InkWell(
+        onTap: engine.hangUp,
+        child: Container(
+          color: Mod.accent,
+          padding: const EdgeInsets.symmetric(horizontal: Mod.s8, vertical: 16),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ExcludeSemantics(
+                child: Transform.rotate(
+                  angle: 2.356, // ~135° — the "hang up" phone
+                  child: const Icon(Icons.call, color: Mod.bg, size: 24),
+                ),
               ),
-            ),
-            onPressed: engine.hangUp,
-            child: ExcludeSemantics(
-              child: Text(
-                loc.hangUp,
-                style: const TextStyle(fontSize: 38, color: Colors.white),
+              const SizedBox(width: Mod.s2),
+              ExcludeSemantics(child: Text(loc.endCall, style: Mod.button())),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A 62×62 square control with a caption: accent-filled when active, outlined
+/// when idle.
+class _TrayControl extends StatelessWidget {
+  const _TrayControl({
+    required this.label,
+    required this.caption,
+    required this.icon,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final String caption;
+  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        child: ExcludeSemantics(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 62,
+                height: 62,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: active ? Mod.accent : Mod.surface,
+                  border: active ? null : Border.all(color: Mod.divider, width: 2),
+                ),
+                child: Icon(icon, size: 28, color: active ? Mod.bg : Mod.text),
               ),
-            ),
+              const SizedBox(height: Mod.s2),
+              SizedBox(
+                width: 76,
+                child: Text(caption,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Mod.caption()),
+              ),
+            ],
           ),
         ),
       ),
