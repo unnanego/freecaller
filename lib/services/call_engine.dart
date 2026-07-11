@@ -261,7 +261,9 @@ class CallEngine extends ChangeNotifier {
         }
       case CallUiEventType.audioSessionActivated:
         // iOS: WebRTC audio must wait for CallKit to hand over the session.
-        _livekit.setMicEnabled(true);
+        // Honor mute — this can re-fire mid-call (route changes) and must not
+        // silently un-mute the user.
+        _livekit.setMicEnabled(!_muted);
       case CallUiEventType.audioSessionDeactivated:
       case CallUiEventType.voipTokenUpdated:
         break;
@@ -274,7 +276,7 @@ class CallEngine extends ChangeNotifier {
     // CallKit activates the session, so lock-screen answers stay safe — and
     // this avoids relying on the plugin's audio-session event, which errors
     // on this version and left the iOS mic unpublished.
-    await _livekit.setMicEnabled(true);
+    await _livekit.setMicEnabled(!_muted);
     // Camera is independent of the CallKit audio session. It fails silently
     // if the app is backgrounded (lock-screen answer) — ensureCameraOn()
     // retries when the app foregrounds.
