@@ -51,13 +51,17 @@ class LiveKitService {
     _cameraPosition = CameraPosition.front;
     final room = Room(
       roomOptions: RoomOptions(
-        adaptiveStream: true,
-        dynacast: true,
+        // 1:1, remote always shown ~fullscreen: simulcast/adaptiveStream only
+        // downgrade quality here, so give the whole budget to one 720p stream
+        // and let the receiver always pull it at full resolution.
+        adaptiveStream: false,
+        dynacast: false,
         defaultAudioPublishOptions: const AudioPublishOptions(dtx: true),
         defaultCameraCaptureOptions: const CameraCaptureOptions(
           cameraPosition: CameraPosition.front,
-          params: VideoParametersPresets.h540_169,
+          params: VideoParametersPresets.h720_169,
         ),
+        defaultVideoPublishOptions: const VideoPublishOptions(simulcast: false),
         defaultAudioOutputOptions: AudioOutputOptions(speakerOn: video),
       ),
     );
