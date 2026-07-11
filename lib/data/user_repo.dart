@@ -7,6 +7,10 @@ class UserRepo {
 
   final FirebaseFirestore _db;
 
+  /// The owner may edit their own display name (rules restrict to this field).
+  Future<void> updateDisplayName(String uid, String name) =>
+      _db.collection('users').doc(uid).update({'displayName': name});
+
   Stream<UserProfile?> watchProfile(String uid) => _db
       .collection('users')
       .doc(uid)

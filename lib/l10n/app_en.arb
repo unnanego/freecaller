@@ -145,5 +145,6 @@
   "capSpeaker": "Speaker",
   "capCamera": "Flip",
   "turnOnVideo": "Turn on video",
-  "turnOffVideo": "Turn off video"
+  "turnOffVideo": "Turn off video",
+  "save": "Save"
 }

@@ -145,5 +145,6 @@
   "capSpeaker": "Динамик",
   "capCamera": "Камера",
   "turnOnVideo": "Включить видео",
-  "turnOffVideo": "Выключить видео"
+  "turnOffVideo": "Выключить видео",
+  "save": "Сохранить"
 }

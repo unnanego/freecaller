@@ -10,7 +10,11 @@ service cloud.firestore {
     // of the app. Writes go through the admin tool (Admin SDK bypasses rules).
     match /users/{uid} {
       allow read: if signedIn();
-      allow write: if false;
+      // The owner may edit only their own display name; everything else is
+      // provisioned by the admin tool (Admin SDK bypasses rules).
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName']);
+      allow create, delete: if false;
 
       // Push tokens: owner-only.
       match /devices/{deviceId} {
