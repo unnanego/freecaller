@@ -73,5 +73,7 @@
   "speakerOn": "Turn on speaker",
   "speakerOff": "Turn off speaker",
   "switchCamera": "Switch camera",
-  "swapVideo": "Swap videos"
+  "swapVideo": "Swap videos",
+  "mute": "Mute",
+  "unmute": "Unmute"
 }

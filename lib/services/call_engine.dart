@@ -59,10 +59,18 @@ class CallEngine extends ChangeNotifier {
   CallOutcome _lastOutcome = CallOutcome.none;
   String _lastPeerName = '';
   bool _accepting = false;
+  bool _muted = false;
 
   EnginePhase get phase => _phase;
   CallSession? get session => _session;
   CallOutcome get lastOutcome => _lastOutcome;
+  bool get muted => _muted;
+
+  Future<void> toggleMute() async {
+    _muted = !_muted;
+    await _livekit.setMicEnabled(!_muted);
+    notifyListeners();
+  }
 
   /// Peer of the most recent session — survives teardown so the UI can
   /// announce «Аида не отвечает» after the session is gone.
@@ -348,6 +356,7 @@ class CallEngine extends ChangeNotifier {
     }
     _session = null;
     _lastOutcome = outcome;
+    _muted = false;
     _setPhase(EnginePhase.idle);
   }
 

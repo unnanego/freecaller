@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:proximity_sensor/proximity_sensor.dart';
 
 import '../services/call_engine.dart';
 import '../services/livekit_service.dart';
@@ -26,6 +27,22 @@ class _InCallScreenState extends State<InCallScreen> {
 
   CallEngine get engine => widget.engine;
   LiveKitService get livekit => widget.livekit;
+
+  @override
+  void initState() {
+    super.initState();
+    // Voice call: blank the screen when the phone is held to the ear, like a
+    // normal call. Video keeps the screen on.
+    if (!(engine.session?.isVideo ?? true)) {
+      ProximitySensor.setProximityScreenOff(true).catchError((Object _) {});
+    }
+  }
+
+  @override
+  void dispose() {
+    ProximitySensor.setProximityScreenOff(false).catchError((Object _) {});
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -75,46 +92,67 @@ class _InCallScreenState extends State<InCallScreen> {
         ),
         SizedBox(
           height: 140,
-          width: double.infinity,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: ValueListenableBuilder<bool>(
-              valueListenable: livekit.speakerOn,
-              builder: (context, speaker, _) {
-                final label = speaker ? loc.speakerOff : loc.speakerOn;
-                return Semantics(
-                  button: true,
-                  label: label,
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor:
-                          speaker ? const Color(0xFF1565C0) : const Color(0xFF37474F),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(28),
-                      ),
-                    ),
-                    onPressed: engine.toggleSpeaker,
-                    icon: ExcludeSemantics(
-                      child: Icon(
-                        speaker ? Icons.volume_up : Icons.volume_down,
-                        color: Colors.white,
-                        size: 44,
-                      ),
-                    ),
-                    label: ExcludeSemantics(
-                      child: Text(
-                        label,
-                        style: const TextStyle(fontSize: 28, color: Colors.white),
-                      ),
-                    ),
+            child: Row(
+              children: [
+                Expanded(child: _muteButton(loc)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: livekit.speakerOn,
+                    builder: (context, speaker, _) {
+                      final label = speaker ? loc.speakerOff : loc.speakerOn;
+                      return _controlButton(
+                        label: label,
+                        icon: speaker ? Icons.volume_up : Icons.volume_down,
+                        color: speaker ? const Color(0xFF1565C0) : const Color(0xFF37474F),
+                        onPressed: engine.toggleSpeaker,
+                      );
+                    },
                   ),
-                );
-              },
+                ),
+              ],
             ),
           ),
         ),
         const SizedBox(height: 8),
       ],
+    );
+  }
+
+  Widget _muteButton(AppLocalizations loc) {
+    final muted = engine.muted;
+    return _controlButton(
+      label: muted ? loc.unmute : loc.mute,
+      icon: muted ? Icons.mic_off : Icons.mic,
+      color: muted ? const Color(0xFFC62828) : const Color(0xFF37474F),
+      onPressed: engine.toggleMute,
+    );
+  }
+
+  Widget _controlButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: color,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        ),
+        onPressed: onPressed,
+        icon: ExcludeSemantics(child: Icon(icon, color: Colors.white, size: 40)),
+        label: ExcludeSemantics(
+          child: Text(label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 20, color: Colors.white)),
+        ),
+      ),
     );
   }
 
@@ -189,6 +227,26 @@ class _InCallScreenState extends State<InCallScreen> {
                 onPressed: engine.switchCamera,
                 child: const ExcludeSemantics(
                   child: Icon(Icons.cameraswitch, color: Colors.white, size: 44),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Semantics(
+              button: true,
+              label: engine.muted ? loc.unmute : loc.mute,
+              child: FloatingActionButton.large(
+                heroTag: null,
+                backgroundColor:
+                    engine.muted ? const Color(0xFFC62828) : const Color(0xDD37474F),
+                onPressed: engine.toggleMute,
+                child: ExcludeSemantics(
+                  child: Icon(engine.muted ? Icons.mic_off : Icons.mic,
+                      color: Colors.white, size: 44),
                 ),
               ),
             ),
