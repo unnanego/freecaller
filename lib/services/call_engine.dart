@@ -59,6 +59,7 @@ class CallEngine extends ChangeNotifier {
   CallSession? _session;
   CallOutcome _lastOutcome = CallOutcome.none;
   String _lastPeerName = '';
+  bool _accepting = false;
 
   EnginePhase get phase => _phase;
   CallSession? get session => _session;
@@ -182,25 +183,37 @@ class CallEngine extends ChangeNotifier {
   }
 
   Future<void> _accept(String callId) async {
-    if (_session?.callId != callId) {
-      final doc = await _calls.getCall(callId);
-      if (doc == null || doc.calleeId != _myUid) return;
-      _adoptIncoming(doc);
+    // The native call UI delivers 'accept' more than once. Joining the
+    // LiveKit room a second time with the same identity kicks the first
+    // session (DisconnectReason.duplicateIdentity), ending the call — so
+    // accepting a given call is strictly one-shot.
+    if (_accepting || (_session?.callId == callId && _phase == EnginePhase.inCall)) {
+      return;
     }
+    _accepting = true;
     try {
+      if (_session?.callId != callId) {
+        final doc = await _calls.getCall(callId);
+        if (doc == null || doc.calleeId != _myUid) return;
+        _adoptIncoming(doc);
+      }
       await _calls.setState(callId, CallState.accepted);
       await _join(callId);
     } catch (e) {
       log('accept failed', error: e);
       await _teardown(CallOutcome.failed, writeState: CallState.ended);
+    } finally {
+      _accepting = false;
     }
   }
 
   Future<void> _join(String callId) async {
+    // Show the call screen immediately on answer; the LiveKit connect below
+    // takes ~1-2s and shouldn't leave the user staring at the ringing UI.
+    _setPhase(EnginePhase.inCall);
     await _livekit.connect(callId, video: _session?.isVideo ?? false);
     await _enableMediaWhenReady();
     await _callUi.reportConnected(callId);
-    _setPhase(EnginePhase.inCall);
   }
 
   // ---------------------------------------------------------------- shared

@@ -41,6 +41,8 @@ class LiveKitService {
   bool get hasPeer => (_room?.remoteParticipants.isNotEmpty) ?? false;
 
   Future<void> connect(String callId, {required bool video}) async {
+    // Never open a second room — a duplicate identity would kick the first.
+    if (_room != null) return;
     final result = await _functions.httpsCallable('mintLiveKitToken').call({'callId': callId});
     final data = Map<String, dynamic>.from(result.data as Map);
     final token = data['token'] as String;
