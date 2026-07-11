@@ -140,5 +140,10 @@
     }
   },
   "connecting": "Connecting…",
-  "endCall": "End"
+  "endCall": "End",
+  "capMic": "Mic",
+  "capSpeaker": "Speaker",
+  "capCamera": "Flip",
+  "turnOnVideo": "Turn on video",
+  "turnOffVideo": "Turn off video"
 }

@@ -32,6 +32,15 @@ class CallSession {
   final String peerPhone;
   final bool outgoing;
   final bool isVideo;
+
+  CallSession copyWith({bool? isVideo}) => CallSession(
+        callId: callId,
+        peerUid: peerUid,
+        peerName: peerName,
+        peerPhone: peerPhone,
+        outgoing: outgoing,
+        isVideo: isVideo ?? this.isVideo,
+      );
 }
 
 /// The single call state machine both directions and both platforms flow
@@ -316,6 +325,30 @@ class CallEngine extends ChangeNotifier {
 
   Future<void> switchCamera() => _livekit.switchCamera();
 
+  /// Switch this call between voice and video mid-call. Publishes/stops the
+  /// camera, re-routes audio, and mirrors isVideo to the call doc so the peer
+  /// follows.
+  Future<void> setVideo(bool video) async {
+    final s = _session;
+    if (s == null || _phase != EnginePhase.inCall || s.isVideo == video) return;
+    await _applyVideo(video);
+    try {
+      await _calls.setVideo(s.callId, video);
+    } catch (e) {
+      log('setVideo write failed', error: e);
+    }
+  }
+
+  /// Apply a voice/video mode locally: camera on/off, audio route, session+UI.
+  Future<void> _applyVideo(bool video) async {
+    final s = _session;
+    if (s == null) return;
+    _session = s.copyWith(isVideo: video);
+    await _livekit.setCameraEnabled(video);
+    await _livekit.setSpeaker(video);
+    notifyListeners();
+  }
+
   void _watchDoc(String callId) {
     _docWatch?.cancel();
     _docWatch = _calls.watchCall(callId).listen((doc) async {
@@ -346,6 +379,12 @@ class CallEngine extends ChangeNotifier {
           if (_phase != EnginePhase.idle) {
             await _teardown(CallOutcome.ended);
           }
+      }
+      // Peer flipped voice<->video mid-call — follow their mode.
+      if (_phase == EnginePhase.inCall &&
+          _session != null &&
+          doc.isVideo != _session!.isVideo) {
+        await _applyVideo(doc.isVideo);
       }
     });
   }

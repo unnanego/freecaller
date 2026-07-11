@@ -36,25 +36,36 @@ class _InCallScreenState extends State<InCallScreen> {
   bool _localFullscreen = false;
   Timer? _timer;
   int _seconds = 0;
+  StreamSubscription<int>? _proximitySub;
+  bool _proximityOn = false;
 
   CallEngine get engine => widget.engine;
   LiveKitService get livekit => widget.livekit;
 
   @override
-  void initState() {
-    super.initState();
-    // Voice call: blank the screen when the phone is held to the ear, like a
-    // normal call. Video keeps the screen on.
-    if (!(engine.session?.isVideo ?? true)) {
-      ProximitySensor.setProximityScreenOff(true).catchError((Object _) {});
-    }
-  }
-
-  @override
   void dispose() {
     _timer?.cancel();
+    _proximitySub?.cancel();
     ProximitySensor.setProximityScreenOff(false).catchError((Object _) {});
     super.dispose();
+  }
+
+  /// Blank the screen when held to the ear during a voice call (like a normal
+  /// call); keep it on for video. Android only holds the screen-off wake lock
+  /// while the events stream is listened — subscribing is what arms it there.
+  Future<void> _syncProximity(bool wantOn) async {
+    if (wantOn == _proximityOn) return;
+    _proximityOn = wantOn;
+    try {
+      if (wantOn) {
+        await ProximitySensor.setProximityScreenOff(true);
+        _proximitySub = ProximitySensor.events.listen((_) {});
+      } else {
+        await _proximitySub?.cancel();
+        _proximitySub = null;
+        await ProximitySensor.setProximityScreenOff(false);
+      }
+    } catch (_) {}
   }
 
   /// Start the mm:ss timer the first time we observe the connected state.
@@ -81,6 +92,7 @@ class _InCallScreenState extends State<InCallScreen> {
         ? ''
         : widget.names.resolve(session.peerUid, session.peerName);
     final isVideo = session?.isVideo ?? false;
+    _syncProximity(!isVideo); // voice → screen-off near ear; video → keep on
     final dialing = engine.phase == EnginePhase.dialing;
     // Full spoken status for VoiceOver; the visual pieces are decoration.
     final spoken = dialing ? loc.dialing(name) : loc.inCallWith(name);
@@ -127,7 +139,7 @@ class _InCallScreenState extends State<InCallScreen> {
               ),
             ),
           ),
-          _tray([_muteButton(loc), _speakerButton(loc)]),
+          _tray([_muteButton(loc), _speakerButton(loc), _videoModeButton(loc)]),
         ],
       ),
     );
@@ -190,7 +202,7 @@ class _InCallScreenState extends State<InCallScreen> {
             ),
           ),
         ),
-        _tray([_muteButton(loc), _flipButton(loc)]),
+        _tray([_muteButton(loc), _flipButton(loc), _voiceModeButton(loc)]),
       ],
     );
   }
@@ -265,7 +277,7 @@ class _InCallScreenState extends State<InCallScreen> {
     final muted = engine.muted;
     return _TrayControl(
       label: muted ? loc.unmute : loc.mute,
-      caption: muted ? loc.unmute : loc.mute,
+      caption: loc.capMic,
       icon: muted ? Icons.mic_off : Icons.mic,
       active: muted,
       onTap: engine.toggleMute,
@@ -277,7 +289,7 @@ class _InCallScreenState extends State<InCallScreen> {
       valueListenable: livekit.speakerOn,
       builder: (context, speaker, _) => _TrayControl(
         label: speaker ? loc.speakerOff : loc.speakerOn,
-        caption: speaker ? loc.speakerOff : loc.speakerOn,
+        caption: loc.capSpeaker,
         icon: speaker ? Icons.volume_up : Icons.volume_down,
         active: speaker,
         onTap: engine.toggleSpeaker,
@@ -288,10 +300,32 @@ class _InCallScreenState extends State<InCallScreen> {
   Widget _flipButton(AppLocalizations loc) {
     return _TrayControl(
       label: loc.switchCamera,
-      caption: loc.switchCamera,
+      caption: loc.capCamera,
       icon: Icons.cameraswitch,
       active: false,
       onTap: engine.switchCamera,
+    );
+  }
+
+  /// Voice call → turn on video (publishes the camera; peer follows).
+  Widget _videoModeButton(AppLocalizations loc) {
+    return _TrayControl(
+      label: loc.turnOnVideo,
+      caption: loc.kindVideo,
+      icon: Icons.videocam,
+      active: false,
+      onTap: () => engine.setVideo(true),
+    );
+  }
+
+  /// Video call → drop back to voice (stops the camera; peer follows).
+  Widget _voiceModeButton(AppLocalizations loc) {
+    return _TrayControl(
+      label: loc.turnOffVideo,
+      caption: loc.kindVoice,
+      icon: Icons.call,
+      active: false,
+      onTap: () => engine.setVideo(false),
     );
   }
 

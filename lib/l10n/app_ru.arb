@@ -140,5 +140,10 @@
     }
   },
   "connecting": "Соединение…",
-  "endCall": "Завершить"
+  "endCall": "Завершить",
+  "capMic": "Микрофон",
+  "capSpeaker": "Динамик",
+  "capCamera": "Камера",
+  "turnOnVideo": "Включить видео",
+  "turnOffVideo": "Выключить видео"
 }

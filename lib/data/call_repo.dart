@@ -44,6 +44,11 @@ class CallRepo {
     });
   }
 
+  /// Flip a live call between voice and video; the peer follows via its watch.
+  /// State is unchanged, so the rules' `from == to` transition allows it.
+  Future<void> setVideo(String callId, bool video) =>
+      _db.collection('calls').doc(callId).update({'isVideo': video});
+
   Stream<CallDoc?> watchCall(String callId) => _db
       .collection('calls')
       .doc(callId)
