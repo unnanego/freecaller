@@ -189,6 +189,25 @@ class CallEngine extends ChangeNotifier {
     _watchDoc(doc.callId);
   }
 
+  /// Callee declined the native ring. A live ring can be declined before the
+  /// engine ever adopts the call (the app stays idle while the native UI rings),
+  /// so write `declined` by callId directly rather than requiring `incoming`
+  /// phase — otherwise the caller never learns and keeps ringing.
+  Future<void> _decline(String callId) async {
+    if (_phase == EnginePhase.incoming && _session?.callId == callId) {
+      await _teardown(CallOutcome.none, writeState: CallState.declined);
+      return;
+    }
+    try {
+      await _calls.setState(callId, CallState.declined);
+    } catch (e) {
+      log('decline write failed', error: e);
+    }
+    try {
+      await _callUi.end(callId, EndReason.local);
+    } catch (_) {}
+  }
+
   Future<void> _accept(String callId) async {
     // The native call UI delivers 'accept' more than once. Joining the
     // LiveKit room a second time with the same identity kicks the first
@@ -245,9 +264,7 @@ class CallEngine extends ChangeNotifier {
       case CallUiEventType.accept:
         if (callId != null) _accept(callId);
       case CallUiEventType.decline:
-        if (_phase == EnginePhase.incoming) {
-          _teardown(CallOutcome.none, writeState: CallState.declined);
-        }
+        if (callId != null) _decline(callId);
       case CallUiEventType.ended:
         // Native end (lock-screen hangup, CallKit red button).
         if (_phase != EnginePhase.idle && callId == _session?.callId) {
