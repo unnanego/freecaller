@@ -87,21 +87,39 @@ class CallKitCallUi implements CallUi {
         ),
       );
 
-  @override
-  Future<void> showIncoming(CallDisplay call) =>
-      FlutterCallkitIncoming.showCallkitIncoming(_params(call));
+  // Calls registered with the native plugin. Android outgoing calls are NOT
+  // registered (see startOutgoing), so later plugin calls must be skipped
+  // for them.
+  final _pluginCalls = <String>{};
 
   @override
-  Future<void> startOutgoing(CallDisplay call) =>
-      FlutterCallkitIncoming.startCall(_params(call));
+  Future<void> showIncoming(CallDisplay call) {
+    _pluginCalls.add(call.callId);
+    return FlutterCallkitIncoming.showCallkitIncoming(_params(call));
+  }
 
   @override
-  Future<void> reportConnected(String callId) =>
-      FlutterCallkitIncoming.setCallConnected(callId);
+  Future<void> startOutgoing(CallDisplay call) {
+    // Android: don't register the outgoing call with telecom/ConnectionService
+    // — it competes with flutter_webrtc for audio focus, oscillating the route
+    // (speaker↔earpiece) and breaking echo cancellation. The app shows its own
+    // in-call UI. iOS still needs CallKit here (CXStartCallAction).
+    if (Platform.isAndroid) return Future.value();
+    _pluginCalls.add(call.callId);
+    return FlutterCallkitIncoming.startCall(_params(call));
+  }
 
   @override
-  Future<void> end(String callId, EndReason reason) =>
-      FlutterCallkitIncoming.endCall(callId);
+  Future<void> reportConnected(String callId) {
+    if (!_pluginCalls.contains(callId)) return Future.value();
+    return FlutterCallkitIncoming.setCallConnected(callId);
+  }
+
+  @override
+  Future<void> end(String callId, EndReason reason) {
+    if (!_pluginCalls.remove(callId)) return Future.value();
+    return FlutterCallkitIncoming.endCall(callId);
+  }
 
   @override
   Future<List<CallDisplay>> activeCalls() async {
