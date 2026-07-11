@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'app.dart';
 import 'core/config.dart';
 import 'data/call_repo.dart';
+import 'data/contact_discovery.dart';
 import 'data/device_repo.dart';
 import 'data/user_repo.dart';
 import 'firebase_options.dart';
@@ -58,6 +59,7 @@ Future<void> main() async {
     callUi: callUi,
     intents: Platform.isIOS ? IosIntentsBridge() : NoopIntentsBridge(),
     pushRegistrar: PushRegistrar(auth, DeviceRepo(firestore), callUi),
+    discovery: ContactDiscoveryRepo(functions),
   );
 
   runApp(FreecallerApp(services: services));

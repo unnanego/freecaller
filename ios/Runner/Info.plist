@@ -30,6 +30,8 @@
 	<string>Микрофон нужен для звонков</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Камера нужна для видеозвонков</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Контакты нужны, чтобы найти близких, которые уже пользуются приложением</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

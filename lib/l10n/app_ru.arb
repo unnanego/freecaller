@@ -75,5 +75,68 @@
   "switchCamera": "Сменить камеру",
   "swapVideo": "Поменять видео местами",
   "mute": "Выключить микрофон",
-  "unmute": "Включить микрофон"
+  "unmute": "Включить микрофон",
+  "navRecents": "Недавние",
+  "navContacts": "Контакты",
+  "navSettings": "Настройки",
+  "contactsTitle": "Контакты",
+  "contactsOnApp": "В Звонилке: {count}",
+  "@contactsOnApp": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "contactsMatchInfo": "Найдены автоматически из контактов телефона — здесь только те, кто пользуется Звонилкой.",
+  "onAppBadge": "В ЗВОНИЛКЕ",
+  "notOnAppBadge": "Нет в Звонилке",
+  "contactsPermissionInfo": "Разрешите доступ к контактам, чтобы находить близких, которые уже пользуются Звонилкой.",
+  "grantAccess": "Разрешить доступ",
+  "contactsEmpty": "Пока никого из ваших контактов нет в Звонилке.",
+  "videoCallContact": "Видеозвонок: {name}",
+  "@videoCallContact": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "recentsTitle": "Недавние",
+  "recentsHint": "Нажмите, чтобы позвонить",
+  "filterAll": "ВСЕ",
+  "filterMissed": "ПРОПУЩЕННЫЕ",
+  "dirIncoming": "Входящий",
+  "dirOutgoing": "Исходящий",
+  "dirMissed": "Пропущенный",
+  "kindVoice": "Звук",
+  "kindVideo": "Видео",
+  "recentsEmpty": "Пока нет звонков.",
+  "accessKicker": "СИСТЕМА · ДОСТУП",
+  "accessTitle": "Какие контакты видит Звонилка",
+  "accessInfo": "Разрешите доступ только к выбранным контактам. Разрешённые контакты, у кого есть Звонилка, появятся в списке.",
+  "accessDone": "Готово · разрешено {count}",
+  "@accessDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "close": "Закрыть",
+  "settingsTitle": "Настройки",
+  "sectionProfile": "ПРОФИЛЬ",
+  "sectionAccount": "АККАУНТ",
+  "fieldDisplayName": "Имя",
+  "fieldPhone": "Номер телефона",
+  "contactAccessRow": "Доступ к контактам",
+  "signOut": "Выйти",
+  "callTimer": "{time}",
+  "@callTimer": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  }
 }

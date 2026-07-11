@@ -37,4 +37,6 @@ class AuthService {
     final data = Map<String, dynamic>.from(result.data as Map);
     await _auth.signInWithCustomToken(data['token'] as String);
   }
+
+  Future<void> signOut() => _auth.signOut();
 }

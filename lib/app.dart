@@ -8,6 +8,7 @@ import 'package:freecaller/l10n/app_localizations.dart';
 
 import 'core/log.dart';
 import 'data/call_repo.dart';
+import 'data/contact_discovery.dart';
 import 'data/models.dart';
 import 'data/user_repo.dart';
 import 'services/auth_service.dart';
@@ -17,9 +18,9 @@ import 'services/intents/intents.dart';
 import 'services/livekit_service.dart';
 import 'services/push_registrar.dart';
 import 'ui/activation_screen.dart';
-import 'ui/call_type_screen.dart';
-import 'ui/home_screen.dart';
 import 'ui/in_call_screen.dart';
+import 'ui/shell/main_shell.dart';
+import 'ui/theme/modernist.dart';
 
 /// Composition root: everything long-lived, created once in main().
 class AppServices {
@@ -31,6 +32,7 @@ class AppServices {
     required this.callUi,
     required this.intents,
     required this.pushRegistrar,
+    required this.discovery,
   });
 
   final AuthService auth;
@@ -40,6 +42,7 @@ class AppServices {
   final CallUi callUi;
   final IntentsBridge intents;
   final PushRegistrar pushRegistrar;
+  final ContactDiscoveryRepo discovery;
 }
 
 class FreecallerApp extends StatelessWidget {
@@ -53,14 +56,7 @@ class FreecallerApp extends StatelessWidget {
       onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1565C0),
-          contrastLevel: 1.0,
-        ),
-        visualDensity: VisualDensity.comfortable,
-      ),
+      theme: Mod.theme(),
       home: StreamBuilder(
         stream: services.auth.authState,
         builder: (context, snapshot) {
@@ -99,9 +95,9 @@ class SignedInShell extends StatefulWidget {
 
 class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserver {
   CallEngine? _engine;
+  UserProfile? _profile;
   List<Contact> _contacts = const [];
-  Contact? _missedFrom;
-  Contact? _choosingCallTypeFor;
+  List<CallDoc> _recents = const [];
   CallOutcome _announcedOutcome = CallOutcome.none;
 
   StreamSubscription<List<Contact>>? _contactsSub;
@@ -148,7 +144,10 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       engine.dispose();
       return;
     }
-    setState(() => _engine = engine);
+    setState(() {
+      _engine = engine;
+      _profile = profile;
+    });
 
     _s.callUi.requestPermissions().catchError((Object e) => log('permissions', error: e));
     _s.pushRegistrar.register().catchError((Object e) => log('register', error: e));
@@ -190,21 +189,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     }
 
     _recentSub = _s.calls.watchRecentIncoming(widget.uid).listen((recent) {
-      final missed = recent
-          .where((c) =>
-              c.state == CallState.missed &&
-              c.createdAt != null &&
-              DateTime.now().difference(c.createdAt!) < const Duration(hours: 24))
-          .toList();
-      setState(() {
-        _missedFrom = missed.isEmpty
-            ? null
-            : Contact(
-                uid: missed.first.callerId,
-                displayName: missed.first.callerName,
-                phone: missed.first.callerPhone,
-              );
-      });
+      setState(() => _recents = recent);
     }, onError: (Object e) => log('recent calls', error: e));
   }
 
@@ -264,21 +249,16 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     if (engine.phase == EnginePhase.dialing || engine.phase == EnginePhase.inCall) {
       return InCallScreen(engine: engine, livekit: _s.livekit);
     }
-    final choosing = _choosingCallTypeFor;
-    if (choosing != null) {
-      return CallTypeScreen(
-        contact: choosing,
-        onStart: (contact, {required video}) {
-          setState(() => _choosingCallTypeFor = null);
-          engine.startCall(contact, video: video);
-        },
-        onCancel: () => setState(() => _choosingCallTypeFor = null),
-      );
+    final profile = _profile;
+    if (profile == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    return HomeScreen(
-      contacts: _contacts,
-      missedFrom: _missedFrom,
-      onCall: (contact) => setState(() => _choosingCallTypeFor = contact),
+    return MainShell(
+      profile: profile,
+      recents: _recents,
+      discovery: _s.discovery,
+      onCall: (contact, {required video}) => engine.startCall(contact, video: video),
+      onSignOut: _s.auth.signOut,
     );
   }
 }
