@@ -186,9 +186,13 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     if (Platform.isAndroid) {
       _fcmForeground = FirebaseMessaging.onMessage.listen((message) {
         final data = message.data;
-        if (data['type'] == 'incoming_call' && data['callId'] is String) {
+        if (data['callId'] is! String) return;
+        final callId = data['callId'] as String;
+        if (data['type'] == 'cancel_call') {
+          _s.callUi.dismiss(callId);
+        } else if (data['type'] == 'incoming_call') {
           _s.callUi.showIncoming(CallDisplay(
-            callId: data['callId'] as String,
+            callId: callId,
             peerName: data['callerName'] as String? ?? '',
             peerPhone: data['callerPhone'] as String? ?? '',
             isVideo: data['video'] == 'true',

@@ -275,9 +275,14 @@ class CallEngine extends ChangeNotifier {
       case CallUiEventType.decline:
         if (callId != null) _decline(callId);
       case CallUiEventType.ended:
-        // Native end (lock-screen hangup, CallKit red button).
+        // Native end/decline (lock-screen hangup, CallKit red button). On iOS
+        // a declined incoming ring arrives here as `ended` (a CXEndCallAction)
+        // rather than `decline`; if we never adopted it (still idle), decline
+        // it by callId so the caller stops ringing.
         if (_phase != EnginePhase.idle && callId == _session?.callId) {
           hangUp();
+        } else if (callId != null) {
+          _decline(callId);
         }
       case CallUiEventType.timeout:
         // Incoming ring timed out natively; the caller (or the sweep)

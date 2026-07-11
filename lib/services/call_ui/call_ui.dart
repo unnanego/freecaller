@@ -55,6 +55,11 @@ abstract class CallUi {
 
   Future<void> end(String callId, EndReason reason);
 
+  /// Dismiss a ringing/active native call by id even when this instance never
+  /// registered it (e.g. the Android FCM background isolate) — used to cancel a
+  /// stale ring when the caller hangs up before we answered.
+  Future<void> dismiss(String callId);
+
   /// Calls the OS still considers active (used on cold start to pick up an
   /// accept that happened before the Flutter engine booted).
   Future<List<CallDisplay>> activeCalls();

@@ -29,9 +29,16 @@ import 'services/push_registrar.dart';
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final data = message.data;
-  if (data['type'] != 'incoming_call' || data['callId'] is! String) return;
+  if (data['callId'] is! String) return;
+  final callId = data['callId'] as String;
+  // The caller hung up before we answered — dismiss the full-screen ring.
+  if (data['type'] == 'cancel_call') {
+    await CallKitCallUi().dismiss(callId);
+    return;
+  }
+  if (data['type'] != 'incoming_call') return;
   await CallKitCallUi().showIncoming(CallDisplay(
-    callId: data['callId'] as String,
+    callId: callId,
     peerName: data['callerName'] as String? ?? '',
     peerPhone: data['callerPhone'] as String? ?? '',
     isVideo: data['video'] == 'true',

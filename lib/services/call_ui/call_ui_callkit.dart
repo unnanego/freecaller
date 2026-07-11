@@ -116,9 +116,24 @@ class CallKitCallUi implements CallUi {
   }
 
   @override
-  Future<void> end(String callId, EndReason reason) {
-    if (!_pluginCalls.remove(callId)) return Future.value();
-    return FlutterCallkitIncoming.endCall(callId);
+  Future<void> end(String callId, EndReason reason) async {
+    final wasPlugin = _pluginCalls.remove(callId);
+    // iOS incoming calls are reported by the native PushKit handler, not via
+    // Dart showIncoming — so their callId is never in _pluginCalls. Clear
+    // CallKit unconditionally on iOS or the native screen lingers after the
+    // call ends. Only ever one call at a time, so endAllCalls is safe.
+    if (Platform.isIOS) {
+      await FlutterCallkitIncoming.endAllCalls();
+      return;
+    }
+    if (wasPlugin) await FlutterCallkitIncoming.endCall(callId);
+  }
+
+  @override
+  Future<void> dismiss(String callId) async {
+    _pluginCalls.remove(callId);
+    await FlutterCallkitIncoming.endCall(callId);
+    if (Platform.isIOS) await FlutterCallkitIncoming.endAllCalls();
   }
 
   @override

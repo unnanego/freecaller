@@ -139,6 +139,23 @@ import flutter_callkit_incoming
     // same run loop, before completion — the app may be terminated and Dart
     // not running. Failure = 0xbaadca11 crash and push throttling.
     let payloadDict = payload.dictionaryPayload
+    // Cancel push: the caller hung up before we answered. Apple still requires
+    // reporting a call for every VoIP push, so report this id then immediately
+    // end it — the ring is dismissed instead of ringing to the 45s timeout.
+    if (payloadDict["cancel"] as? String) == "true" {
+      let callId = payloadDict["callId"] as? String ?? UUID().uuidString
+      let endData = flutter_callkit_incoming.Data(args: [
+        "id": callId,
+        "nameCaller": "",
+        "handle": "",
+        "appName": "Звонилка",
+        "type": 0,
+      ])
+      let plugin = SwiftFlutterCallkitIncomingPlugin.sharedInstance
+      plugin?.showCallkitIncoming(endData, fromPushKit: true, completion: completion)
+      plugin?.endCall(endData)
+      return
+    }
     let isVideo = (payloadDict["video"] as? String) == "true"
     let callData = flutter_callkit_incoming.Data(args: [
       "id": payloadDict["callId"] as? String ?? UUID().uuidString,
