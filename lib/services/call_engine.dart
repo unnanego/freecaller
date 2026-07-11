@@ -76,6 +76,7 @@ class CallEngine extends ChangeNotifier {
   Future<void> init() async {
     _uiEvents = _callUi.events.listen(_onUiEvent);
     _mediaDrop = _livekit.onDisconnected.listen((_) {
+      log('engine: livekit onDisconnected (phase=$_phase)');
       if (_phase == EnginePhase.inCall) hangUp();
     });
 
@@ -218,6 +219,7 @@ class CallEngine extends ChangeNotifier {
   }
 
   void _onUiEvent(CallUiEvent event) {
+    log('engine: ui event ${event.type} (phase=$_phase call=${event.callId})');
     final callId = event.callId;
     switch (event.type) {
       case CallUiEventType.accept:
@@ -276,6 +278,7 @@ class CallEngine extends ChangeNotifier {
   void _watchDoc(String callId) {
     _docWatch?.cancel();
     _docWatch = _calls.watchCall(callId).listen((doc) async {
+      log('engine: doc $callId -> ${doc?.state} (phase=$_phase)');
       if (doc == null || _session?.callId != callId) return;
       switch (doc.state) {
         case CallState.ringing:
@@ -310,6 +313,7 @@ class CallEngine extends ChangeNotifier {
   /// transition; omitted when reacting to the other side (doc already
   /// terminal).
   Future<void> _teardown(CallOutcome outcome, {CallState? writeState}) async {
+    log('engine: teardown outcome=$outcome write=$writeState (phase=$_phase)');
     final session = _session;
     _ringTimer?.cancel();
     _ringTimer = null;
