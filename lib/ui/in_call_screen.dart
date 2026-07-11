@@ -197,15 +197,25 @@ class _InCallScreenState extends State<InCallScreen> {
                   ? Semantics(
                       button: true,
                       label: loc.swapVideo,
-                      child: GestureDetector(
-                        onTap: () =>
-                            setState(() => _localFullscreen = !_localFullscreen),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: SizedBox(
-                            width: 110,
-                            height: 150,
-                            child: ExcludeSemantics(child: VideoTrackRenderer(track)),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: SizedBox(
+                          width: 110,
+                          height: 150,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              ExcludeSemantics(child: VideoTrackRenderer(track)),
+                              // The local camera's VideoTrackRenderer has its own
+                              // tap/pinch GestureDetector (focus/zoom) that wins
+                              // the tap over a wrapping one; an opaque overlay on
+                              // top intercepts it first so the swap fires.
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => setState(
+                                    () => _localFullscreen = !_localFullscreen),
+                              ),
+                            ],
                           ),
                         ),
                       ),
