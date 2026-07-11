@@ -36,6 +36,9 @@ import flutter_callkit_incoming
     registry.desiredPushTypes = [.voIP]
     pushRegistry = registry
 
+    // Ask once for Siri so «Позвони Аиде через Звонилку» can reach the app.
+    INPreferences.requestSiriAuthorization { _ in }
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -104,10 +107,13 @@ import flutter_callkit_incoming
       try? json.write(to: container.appendingPathComponent(Self.contactsFile), options: .atomic)
     }
 
-    // INVocabulary (teaching Siri the contact names) requires the
-    // com.apple.developer.siri entitlement — it hard-throws without it.
-    // Enabled together with the SiriIntents extension (M5); the App Group
-    // snapshot above is what the extension reads.
+    // Teach Siri the family names so it recognises «Позвони Аиде». Needs the
+    // Siri entitlement (now present); the App Group snapshot above is what the
+    // extension reads to resolve the spoken name to a uid.
+    let names = contacts.compactMap { $0["displayName"] as? String }.filter { !$0.isEmpty }
+    if !names.isEmpty {
+      INVocabulary.shared().setVocabularyStrings(NSOrderedSet(array: names), of: .contactName)
+    }
   }
 
   // MARK: - PushKit (VoIP push → CallKit, synchronously)

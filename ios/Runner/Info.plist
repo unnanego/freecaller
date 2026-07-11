@@ -32,6 +32,8 @@
 	<string>Камера нужна для видеозвонков</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Контакты нужны, чтобы найти близких, которые уже пользуются приложением</string>
+	<key>NSSiriUsageDescription</key>
+	<string>Siri нужен, чтобы звонить близким голосом</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

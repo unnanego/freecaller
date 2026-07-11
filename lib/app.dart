@@ -128,7 +128,22 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   /// Load uid -> device-book name so device names win over server names.
   Future<void> _loadNames() async {
     final map = await _s.discovery.deviceNamesByUid();
-    if (mounted) setState(() => _names = ContactNames(map));
+    if (!mounted) return;
+    setState(() => _names = ContactNames(map));
+    _syncSiriContacts(); // re-teach Siri with the device names once we have them
+  }
+
+  /// Hand the roster to Siri/the Intents extension using the names as saved in
+  /// the device address book, so «Позвони Mom» resolves.
+  void _syncSiriContacts() {
+    _s.intents.syncContacts([
+      for (final c in _contacts)
+        Contact(
+          uid: c.uid,
+          displayName: _names.resolve(c.uid, c.displayName),
+          phone: c.phone,
+        ),
+    ]);
   }
 
   Future<void> _bootstrap() async {
@@ -164,8 +179,9 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     var siriFlushed = false;
     _contactsSub = _s.users.watchContacts(widget.uid).listen((contacts) {
       setState(() => _contacts = contacts);
-      // Keep Siri's vocabulary and the Intents extension snapshot current.
-      _s.intents.syncContacts(contacts);
+      // Keep Siri's vocabulary and the Intents extension snapshot current,
+      // using the names as saved in the device address book (like everywhere).
+      _syncSiriContacts();
       // Flush a Siri request that arrived before Dart was listening — only
       // once contacts exist, so the uid can resolve.
       if (!siriFlushed) {
@@ -273,6 +289,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       discovery: _s.discovery,
       onCall: (contact, {required video}) => engine.startCall(contact, video: video),
       onSignOut: _s.auth.signOut,
+      onSaveName: (name) => _s.users.updateDisplayName(profile.uid, name),
     );
   }
 }
