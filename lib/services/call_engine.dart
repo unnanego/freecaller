@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
@@ -262,10 +261,12 @@ class CallEngine extends ChangeNotifier {
   }
 
   Future<void> _enableMediaWhenReady() async {
-    // Android owns its audio session — enable the mic immediately. On iOS
-    // the audioSessionActivated event does it (see _onUiEvent); enabling
-    // early is the classic lock-screen-answer-no-audio bug.
-    if (!Platform.isIOS) await _livekit.setMicEnabled(true);
+    // Publish the mic on both platforms. On iOS the actual audio I/O is still
+    // gated natively by RTCAudioSession manual-audio (AppDelegate) until
+    // CallKit activates the session, so lock-screen answers stay safe — and
+    // this avoids relying on the plugin's audio-session event, which errors
+    // on this version and left the iOS mic unpublished.
+    await _livekit.setMicEnabled(true);
     // Camera is independent of the CallKit audio session. It fails silently
     // if the app is backgrounded (lock-screen answer) — ensureCameraOn()
     // retries when the app foregrounds.
