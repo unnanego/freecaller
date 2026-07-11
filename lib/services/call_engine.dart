@@ -80,21 +80,35 @@ class CallEngine extends ChangeNotifier {
     });
 
     // Cold start: the user may have accepted a call from the native UI
-    // before the Flutter engine booted.
-    for (final active in await _callUi.activeCalls()) {
-      final doc = await _calls.getCall(active.callId);
-      if (doc == null) {
-        await _callUi.end(active.callId, EndReason.failed);
-        continue;
+    // before the Flutter engine booted. A stale/failed leftover call must
+    // never block sign-in, so every step here is best-effort.
+    try {
+      for (final active in await _callUi.activeCalls()) {
+        try {
+          final doc = await _calls.getCall(active.callId);
+          final live = doc != null &&
+              (doc.state == CallState.ringing || doc.state == CallState.accepted);
+          if (!live) {
+            await _callUi.end(active.callId, EndReason.remote);
+            continue;
+          }
+          if (doc.state == CallState.ringing && doc.calleeId == _myUid) {
+            _adoptIncoming(doc);
+          } else if (doc.state == CallState.accepted) {
+            _adoptIncoming(doc);
+            await _join(doc.callId);
+          } else {
+            await _callUi.end(active.callId, EndReason.remote);
+          }
+        } catch (e) {
+          log('cold-start active call ${active.callId} failed', error: e);
+          try {
+            await _callUi.end(active.callId, EndReason.failed);
+          } catch (_) {}
+        }
       }
-      if (doc.state == CallState.ringing && doc.calleeId == _myUid) {
-        _adoptIncoming(doc);
-      } else if (doc.state == CallState.accepted) {
-        _adoptIncoming(doc);
-        await _join(doc.callId);
-      } else {
-        await _callUi.end(active.callId, EndReason.remote);
-      }
+    } catch (e) {
+      log('cold-start activeCalls failed', error: e);
     }
   }
 

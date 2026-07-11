@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
 
+import 'core/log.dart';
 import 'data/call_repo.dart';
 import 'data/models.dart';
 import 'data/user_repo.dart';
@@ -141,8 +142,16 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     engine.addListener(_onEngineChanged);
     await engine.init();
 
-    await _s.callUi.requestPermissions();
-    await _s.pushRegistrar.register();
+    // Show the home screen as soon as the engine is ready — the steps below
+    // (permissions, token upload, listeners) must never block sign-in.
+    if (!mounted) {
+      engine.dispose();
+      return;
+    }
+    setState(() => _engine = engine);
+
+    _s.callUi.requestPermissions().catchError((Object e) => log('permissions', error: e));
+    _s.pushRegistrar.register().catchError((Object e) => log('register', error: e));
 
     var siriFlushed = false;
     _contactsSub = _s.users.watchContacts(widget.uid).listen((contacts) {
@@ -197,8 +206,6 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
               );
       });
     });
-
-    setState(() => _engine = engine);
   }
 
   void _onEngineChanged() {
