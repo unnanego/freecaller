@@ -1,5 +1,5 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions/v2";
 import {
@@ -7,6 +7,8 @@ import {
   CallPushPayload,
   logPushFailure,
   sendFcmCallPush,
+  sendFcmCancel,
+  sendVoipCancel,
   sendVoipPush,
 } from "./push";
 
@@ -51,6 +53,45 @@ export const onCallCreated = onDocumentCreated(
           }
         } catch (err) {
           logPushFailure(d.platform, call.calleeId, err);
+        }
+      })
+    );
+  }
+);
+
+/**
+ * When a still-ringing call is ended before the callee answered (the caller
+ * cancelled, or the sweep marked it missed), push the callee's devices to
+ * dismiss the ring — otherwise it rings on to the 45s timeout. `declined` is
+ * the callee's own action, so their ring is already gone; skip it.
+ */
+export const onCallEnded = onDocumentUpdated(
+  { document: "calls/{callId}", secrets: [apnsKey] },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+    if (before.state !== "ringing") return;
+    if (after.state !== "cancelled" && after.state !== "missed") return;
+
+    const callId = event.params.callId;
+    const devices = await getFirestore()
+      .collection("users")
+      .doc(after.calleeId)
+      .collection("devices")
+      .get();
+
+    await Promise.all(
+      devices.docs.map(async (doc) => {
+        const d = doc.data();
+        try {
+          if (d.platform === "ios" && d.voipToken) {
+            await sendVoipCancel(d.voipToken, callId);
+          } else if (d.platform === "android" && d.fcmToken) {
+            await sendFcmCancel(d.fcmToken, callId);
+          }
+        } catch (err) {
+          logPushFailure(d.platform, after.calleeId, err);
         }
       })
     );

@@ -50,6 +50,20 @@ async function apnsProviderJwt(): Promise<string> {
  * never ring a stale call.
  */
 export async function sendVoipPush(voipToken: string, payload: CallPushPayload): Promise<void> {
+  return sendVoip(voipToken, payload);
+}
+
+/**
+ * Cancels a ringing call on iOS: the caller hung up before the callee
+ * answered. Still a VoIP push (so it wakes the device), but the app's PushKit
+ * handler recognises `cancel` and dismisses the CallKit ring instead of
+ * ringing to the 45s timeout.
+ */
+export async function sendVoipCancel(voipToken: string, callId: string): Promise<void> {
+  return sendVoip(voipToken, { callId, cancel: "true" });
+}
+
+async function sendVoip(voipToken: string, body: object): Promise<void> {
   const host =
     apnsEnv.value() === "production"
       ? "https://api.push.apple.com"
@@ -69,24 +83,24 @@ export async function sendVoipPush(voipToken: string, payload: CallPushPayload):
       "apns-expiration": "0",
     });
     let status = 0;
-    let body = "";
+    let responseBody = "";
     req.on("response", (headers) => {
       status = Number(headers[":status"] ?? 0);
     });
-    req.on("data", (chunk) => (body += chunk));
+    req.on("data", (chunk) => (responseBody += chunk));
     req.on("end", () => {
       client.close();
       if (status === 200) {
         resolve();
       } else {
-        reject(new Error(`APNs ${status}: ${body}`));
+        reject(new Error(`APNs ${status}: ${responseBody}`));
       }
     });
     req.on("error", (err) => {
       client.close();
       reject(err);
     });
-    req.end(JSON.stringify(payload));
+    req.end(JSON.stringify(body));
   });
 }
 
@@ -98,6 +112,15 @@ export async function sendFcmCallPush(fcmToken: string, payload: CallPushPayload
   await getMessaging().send({
     token: fcmToken,
     data: { type: "incoming_call", ...payload },
+    android: { priority: "high", ttl: 45_000 },
+  });
+}
+
+/** Dismisses a ringing CallStyle notification on Android when the caller cancels. */
+export async function sendFcmCancel(fcmToken: string, callId: string): Promise<void> {
+  await getMessaging().send({
+    token: fcmToken,
+    data: { type: "cancel_call", callId },
     android: { priority: "high", ttl: 45_000 },
   });
 }

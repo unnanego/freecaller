@@ -9,5 +9,5 @@ setGlobalOptions({ region: "europe-west3", maxInstances: 10 });
 
 export { redeemActivationCode } from "./activation";
 export { mintLiveKitToken } from "./livekit";
-export { onCallCreated, sweepStaleCalls } from "./calls";
+export { onCallCreated, onCallEnded, sweepStaleCalls } from "./calls";
 export { matchContacts } from "./contacts";
