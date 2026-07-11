@@ -51,10 +51,10 @@ functions/lib/
 functions/.env
 tools/*.js
 
-# Firebase / secrets (never commit)
-.firebaserc
-google-services.json
-ios/Runner/GoogleService-Info.plist
+# Firebase secrets (never commit). The mobile config files
+# (google-services.json / GoogleService-Info.plist) and firebase_options.dart
+# are client config, not secrets, and ARE committed — security is enforced by
+# Firestore rules + custom-token-only auth, not by hiding these.
 *-service-account*.json
 
 # Self-hosted LiveKit — real configs hold the API secret / domain

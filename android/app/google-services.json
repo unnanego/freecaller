@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "806105122900",
+    "project_id": "freecaller-fef3e",
+    "storage_bucket": "freecaller-fef3e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:806105122900:android:015ef79e9f9f02b33705c1",
+        "android_client_info": {
+          "package_name": "com.unnanego.freecaller"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAkj8GtwU11JiedCgXF_STk_t-hdyPzhOE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

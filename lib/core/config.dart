@@ -5,7 +5,7 @@ abstract final class Config {
   static const ringTimeout = Duration(seconds: 45);
 
   /// Cloud Functions region (keep in sync with functions deployment).
-  static const functionsRegion = 'us-central1';
+  static const functionsRegion = 'europe-west3';
 
   /// MethodChannel name for the iOS intents bridge (Siri → Dart).
   static const intentsChannel = 'freecaller/intents';
