@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/config.dart';
 import '../../core/log.dart';
@@ -126,6 +127,10 @@ class CallKitCallUi implements CallUi {
   @override
   Future<void> requestPermissions() async {
     if (!Platform.isAndroid) return;
+    // RECORD_AUDIO is mandatory: the call's foreground service is of type
+    // "microphone" and Android kills the app on start without it. Camera is
+    // requested too so video calls don't prompt mid-call.
+    await [Permission.microphone, Permission.camera].request();
     await FlutterCallkitIncoming.requestNotificationPermission({
       'title': 'Уведомления о звонках',
       'rationaleMessagePermission': 'Нужно, чтобы показывать входящие звонки',
