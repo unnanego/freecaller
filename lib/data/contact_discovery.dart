@@ -32,6 +32,23 @@ class DiscoveredContact {
       Contact(uid: uid!, displayName: name, phone: phone ?? '');
 }
 
+/// Maps a registered user's uid to the name the current user has them saved
+/// under in their device address book, so device names win over the
+/// server-provisioned display name everywhere the person appears.
+class ContactNames {
+  const ContactNames(this._byUid);
+
+  final Map<String, String> _byUid;
+
+  static const empty = ContactNames({});
+
+  /// The device-book name for [uid] if we have one, else [fallback].
+  String resolve(String uid, String fallback) {
+    final name = _byUid[uid];
+    return (name != null && name.isNotEmpty) ? name : fallback;
+  }
+}
+
 /// WhatsApp/Telegram-style discovery: reads the device address book and asks
 /// the backend which of those numbers belong to registered users. A local
 /// allow-list (the in-app "contact access" sheet) further narrows which of
@@ -132,6 +149,18 @@ class ContactDiscoveryRepo {
     return all
         .where((c) => c.onApp && !blocked.contains(c.deviceId))
         .toList();
+  }
+
+  /// uid -> device address-book name, for every matched contact (ignores the
+  /// allow-list: even a hidden contact should show their saved name if they
+  /// call). Empty if permission isn't granted.
+  Future<Map<String, String>> deviceNamesByUid() async {
+    final all = await loadDeviceContacts();
+    if (all == null) return const {};
+    return {
+      for (final c in all)
+        if (c.onApp) c.uid!: c.name,
+    };
   }
 
   Future<Set<String>> blockedIds() async {

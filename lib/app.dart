@@ -98,6 +98,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   UserProfile? _profile;
   List<Contact> _contacts = const [];
   List<CallDoc> _recents = const [];
+  ContactNames _names = ContactNames.empty;
   CallOutcome _announcedOutcome = CallOutcome.none;
 
   StreamSubscription<List<Contact>>? _contactsSub;
@@ -120,7 +121,14 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     // the lock screen) — re-assert it once the app is visible.
     if (state == AppLifecycleState.resumed) {
       _engine?.ensureCameraOn();
+      _loadNames(); // contacts may have been granted/edited while away
     }
+  }
+
+  /// Load uid -> device-book name so device names win over server names.
+  Future<void> _loadNames() async {
+    final map = await _s.discovery.deviceNamesByUid();
+    if (mounted) setState(() => _names = ContactNames(map));
   }
 
   Future<void> _bootstrap() async {
@@ -149,6 +157,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       _profile = profile;
     });
 
+    _loadNames();
     _s.callUi.requestPermissions().catchError((Object e) => log('permissions', error: e));
     _s.pushRegistrar.register().catchError((Object e) => log('register', error: e));
 
@@ -247,7 +256,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (engine.phase == EnginePhase.dialing || engine.phase == EnginePhase.inCall) {
-      return InCallScreen(engine: engine, livekit: _s.livekit);
+      return InCallScreen(engine: engine, livekit: _s.livekit, names: _names);
     }
     final profile = _profile;
     if (profile == null) {
@@ -256,6 +265,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     return MainShell(
       profile: profile,
       recents: _recents,
+      names: _names,
       discovery: _s.discovery,
       onCall: (contact, {required video}) => engine.startCall(contact, video: video),
       onSignOut: _s.auth.signOut,

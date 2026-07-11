@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
 
+import '../data/contact_discovery.dart';
 import '../data/models.dart';
 import 'theme/modernist.dart';
 
@@ -10,9 +11,15 @@ import 'theme/modernist.dart';
 /// First pass: incoming calls only (the existing query). Outgoing history needs
 /// a small schema/index addition and lands next.
 class RecentsScreen extends StatefulWidget {
-  const RecentsScreen({super.key, required this.recents, required this.onCall});
+  const RecentsScreen({
+    super.key,
+    required this.recents,
+    required this.names,
+    required this.onCall,
+  });
 
   final List<CallDoc> recents;
+  final ContactNames names;
   final void Function(Contact contact, {required bool video}) onCall;
 
   @override
@@ -56,7 +63,11 @@ class _RecentsScreenState extends State<RecentsScreen> {
                 : ListView.builder(
                     padding: EdgeInsets.zero,
                     itemCount: rows.length,
-                    itemBuilder: (_, i) => _RecentRow(call: rows[i], onCall: widget.onCall),
+                    itemBuilder: (_, i) => _RecentRow(
+                      call: rows[i],
+                      names: widget.names,
+                      onCall: widget.onCall,
+                    ),
                   ),
           ),
         ],
@@ -107,16 +118,18 @@ class _RecentsScreenState extends State<RecentsScreen> {
 }
 
 class _RecentRow extends StatelessWidget {
-  const _RecentRow({required this.call, required this.onCall});
+  const _RecentRow({required this.call, required this.names, required this.onCall});
 
   final CallDoc call;
+  final ContactNames names;
   final void Function(Contact contact, {required bool video}) onCall;
 
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
     final missed = call.state == CallState.missed;
-    final name = call.callerName;
+    // Prefer the name from the user's own address book over the server name.
+    final name = names.resolve(call.callerId, call.callerName);
     final dir = missed ? loc.dirMissed : loc.dirIncoming;
     final kind = call.isVideo ? loc.kindVideo : loc.kindVoice;
     final nameColor = missed ? Mod.accent : Mod.text;

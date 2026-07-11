@@ -14,6 +14,7 @@ class MainShell extends StatefulWidget {
     super.key,
     required this.profile,
     required this.recents,
+    required this.names,
     required this.discovery,
     required this.onCall,
     required this.onSignOut,
@@ -21,6 +22,7 @@ class MainShell extends StatefulWidget {
 
   final UserProfile profile;
   final List<CallDoc> recents;
+  final ContactNames names;
   final ContactDiscoveryRepo discovery;
   final void Function(Contact contact, {required bool video}) onCall;
   final Future<void> Function() onSignOut;
@@ -40,7 +42,11 @@ class _MainShellState extends State<MainShell> {
       body: IndexedStack(
         index: _tab,
         children: [
-          RecentsScreen(recents: widget.recents, onCall: widget.onCall),
+          RecentsScreen(
+            recents: widget.recents,
+            names: widget.names,
+            onCall: widget.onCall,
+          ),
           ContactsScreen(discovery: widget.discovery, onCall: widget.onCall),
           SettingsScreen(
             profile: widget.profile,

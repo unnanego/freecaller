@@ -3,6 +3,7 @@ import 'package:freecaller/l10n/app_localizations.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:proximity_sensor/proximity_sensor.dart';
 
+import '../data/contact_discovery.dart';
 import '../services/call_engine.dart';
 import '../services/livekit_service.dart';
 
@@ -13,10 +14,16 @@ import '../services/livekit_service.dart';
 /// default), the other floats in a corner — tap it to swap; plus camera
 /// switch. The hang-up bar is always in the same place.
 class InCallScreen extends StatefulWidget {
-  const InCallScreen({super.key, required this.engine, required this.livekit});
+  const InCallScreen({
+    super.key,
+    required this.engine,
+    required this.livekit,
+    required this.names,
+  });
 
   final CallEngine engine;
   final LiveKitService livekit;
+  final ContactNames names;
 
   @override
   State<InCallScreen> createState() => _InCallScreenState();
@@ -48,7 +55,10 @@ class _InCallScreenState extends State<InCallScreen> {
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
     final session = engine.session;
-    final name = session?.peerName ?? '';
+    // Prefer the name from the user's own address book over the server name.
+    final name = session == null
+        ? ''
+        : widget.names.resolve(session.peerUid, session.peerName);
     final isVideo = session?.isVideo ?? false;
     final status = engine.phase == EnginePhase.dialing
         ? loc.dialing(name)
