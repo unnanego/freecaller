@@ -162,9 +162,13 @@ import flutter_callkit_incoming
       "nameCaller": payloadDict["callerName"] as? String ?? "Звонилка",
       "handle": payloadDict["callerPhone"] as? String ?? "",
       "appName": "Звонилка",
-      "type": isVideo ? 1 : 0,
+      // Always report the call as video-capable so iOS foregrounds the app on
+      // answer (even from the lock screen) — landing on our in-call screen with
+      // the video button instead of the native UI. The real voice/video mode
+      // (and audio routing below) still comes from the call doc.
+      "type": 1,
       "duration": 45000,
-      "supportsVideo": isVideo,
+      "supportsVideo": true,
       "maximumCallGroups": 1,
       "supportsDTMF": false,
       "supportsHolding": false,
