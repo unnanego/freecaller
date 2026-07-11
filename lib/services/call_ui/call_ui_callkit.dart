@@ -133,7 +133,10 @@ class CallKitCallUi implements CallUi {
   Future<void> dismiss(String callId) async {
     _pluginCalls.remove(callId);
     await FlutterCallkitIncoming.endCall(callId);
-    if (Platform.isIOS) await FlutterCallkitIncoming.endAllCalls();
+    // endCall alone can leave the full-screen incoming activity + ringtone
+    // running when the cancel is handled in a background isolate; endAllCalls
+    // works off the shared/persisted call list and also tears those down.
+    await FlutterCallkitIncoming.endAllCalls();
   }
 
   @override

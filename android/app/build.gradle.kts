@@ -46,3 +46,11 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // FreecallerMessagingService extends the Flutter FCM service; compile
+    // against the Firebase Messaging API. The runtime artifact is provided by
+    // the firebase_messaging plugin, so keep this compileOnly to avoid pinning
+    // a conflicting version.
+    compileOnly("com.google.firebase:firebase-messaging:24.1.0")
+}

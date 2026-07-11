@@ -49,6 +49,16 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+        <!-- Native FCM handler: dismisses a cancelled ring's full-screen
+             activity (the plugin's dismiss can't); forwards everything else to
+             the Flutter background handler. Higher priority than the default. -->
+        <service
+            android:name=".FreecallerMessagingService"
+            android:exported="false">
+            <intent-filter android:priority="1">
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
