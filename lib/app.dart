@@ -205,7 +205,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
                 phone: missed.first.callerPhone,
               );
       });
-    });
+    }, onError: (Object e) => log('recent calls', error: e));
   }
 
   void _onEngineChanged() {
