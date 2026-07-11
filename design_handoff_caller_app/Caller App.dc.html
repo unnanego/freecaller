@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="modernist.css">
+  <style>
+    html, body { margin: 0; padding: 0; }
+    a { color: var(--color-accent); text-decoration: none; }
+    a:hover { color: var(--color-accent-600); }
+    *::-webkit-scrollbar { width: 8px; height: 8px; }
+    *::-webkit-scrollbar-thumb { background: var(--color-neutral-400); }
+  </style>
+</helmet>
+
+<div style="{{ themeStyle }}">
+
+  <!-- ── INDEX RAIL ─────────────────────────────────────── -->
+  <div style="width:236px;flex:none;padding-top:6px">
+    <div style="font-family:var(--font-heading);font-weight:800;font-size:24px;letter-spacing:-0.01em">DIALR</div>
+    <div style="font-size:11px;color:var(--color-neutral-600);letter-spacing:0.12em;text-transform:uppercase;margin-top:6px">Caller · Prototype</div>
+
+    <div style="height:24px"></div>
+    <div style="height:2px;background:var(--color-divider)"></div>
+
+    <div onClick="{{ onNavRecents }}" style="{{ navRecentsStyle }}"><span style="color:var(--color-neutral-500);margin-right:12px;font-size:13px">01</span>Recents</div>
+    <div onClick="{{ onNavContacts }}" style="{{ navContactsStyle }}"><span style="color:var(--color-neutral-500);margin-right:12px;font-size:13px">02</span>Contacts</div>
+    <div onClick="{{ onNavIncoming }}" style="{{ navIncomingStyle }}"><span style="color:var(--color-neutral-500);margin-right:12px;font-size:13px">03</span>Incoming</div>
+    <div onClick="{{ onNavVoice }}" style="{{ navVoiceStyle }}"><span style="color:var(--color-neutral-500);margin-right:12px;font-size:13px">04</span>Voice call</div>
+    <div onClick="{{ onNavVideo }}" style="{{ navVideoStyle }}"><span style="color:var(--color-neutral-500);margin-right:12px;font-size:13px">05</span>Video call</div>
+    <div onClick="{{ onNavSettings }}" style="{{ navSettingsStyle }}"><span style="color:var(--color-neutral-500);margin-right:12px;font-size:13px">06</span>Settings</div>
+    <div onClick="{{ onNavRegister }}" style="{{ navRegisterStyle }}"><span style="color:var(--color-neutral-500);margin-right:12px;font-size:13px">07</span>Register</div>
+
+    <div style="height:28px"></div>
+    <p style="font-size:12px;line-height:1.6;color:var(--color-neutral-700);margin:0 0 16px">Tap a screen to jump. Inside the phone, missed calls read in red — and <strong style="font-weight:800">mute</strong>, <strong style="font-weight:800">camera flip</strong> and <strong style="font-weight:800">voice ↔ video</strong> are all live.</p>
+
+    <div style="height:2px;background:var(--color-divider);margin-bottom:12px"></div>
+    <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-accent);font-family:var(--font-heading);font-weight:800">Phase 2</div>
+    <p style="font-size:12px;line-height:1.6;color:var(--color-neutral-600);margin:4px 0 0">Group video — space reserved on the video-call grid.</p>
+  </div>
+
+  <!-- ── PHONE ──────────────────────────────────────────── -->
+  <div data-screen-label="Caller app" style="position:relative;width:392px;height:844px;flex:none;border:2px solid var(--color-text);background:var(--color-bg);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow-lg)">
+
+    <!-- status bar -->
+    <div style="height:44px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-family:var(--font-heading);font-weight:800;font-size:14px">
+      <span>{{ deviceTime }}</span>
+      <span style="font-size:11px;letter-spacing:0.08em">5G · 100%</span>
+    </div>
+
+    <!-- ═══ RECENTS ═══ -->
+    <sc-if value="{{ isRecents }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="Recents" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div style="padding:6px 20px 14px">
+        <h2 style="margin:0;font-size:32px">Recents</h2>
+        <div style="font-size:12px;color:var(--color-neutral-600);letter-spacing:0.03em;margin-top:2px">{{ callCount }} calls · tap to open</div>
+      </div>
+      <div style="display:flex;border-top:2px solid var(--color-divider);border-bottom:2px solid var(--color-divider)">
+        <button onClick="{{ onFilterAll }}" style="{{ allTabStyle }}">All</button>
+        <button onClick="{{ onFilterMissed }}" style="{{ missedTabStyle }}">Missed</button>
+      </div>
+      <div style="flex:1;overflow:auto">
+        <sc-for list="{{ calls }}" as="item" hint-placeholder-count="6">
+          <div onClick="{{ item.onTap }}" style="display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--color-divider);cursor:pointer">
+            <div style="width:46px;height:46px;flex:none;border:2px solid var(--color-divider);display:grid;place-items:center;font-family:var(--font-heading);font-weight:800;font-size:15px">{{ item.initials }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-family:var(--font-heading);font-weight:800;font-size:17px;color:{{ item.nameColor }}">{{ item.name }}</div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-600);margin-top:2px">
+                <span style="display:inline-flex;color:{{ item.dirColor }}">
+                  <sc-if value="{{ item.isOutgoing }}" hint-placeholder-val="{{ true }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="8 7 17 7 17 16"/></svg></sc-if>
+                  <sc-if value="{{ item.isIncoming }}" hint-placeholder-val="{{ true }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square"><line x1="17" y1="7" x2="7" y2="17"/><polyline points="16 17 7 17 7 8"/></svg></sc-if>
+                </span>
+                <span>{{ item.dirLabel }} · {{ item.modeText }}</span>
+              </div>
+            </div>
+            <div style="text-align:right;flex:none">
+              <div style="font-size:11px;color:var(--color-neutral-600);letter-spacing:0.04em">{{ item.time }}</div>
+              <span style="display:inline-flex;color:var(--color-neutral-500);margin-top:6px">
+                <sc-if value="{{ item.isVideo }}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="0"/></svg></sc-if>
+                <sc-if value="{{ item.isVoice }}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg></sc-if>
+              </span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;border-top:2px solid var(--color-divider)">
+        <div onClick="{{ onNavRecents }}" style="{{ tabRecentsStyle }}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Recents
+        </div>
+        <div onClick="{{ onNavContacts }}" style="{{ tabContactsStyle }}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Contacts
+        </div>
+        <div onClick="{{ onNavSettings }}" style="{{ tabSettingsStyle }}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>Settings
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ═══ CONTACTS (auto-matched from OS) ═══ -->
+    <sc-if value="{{ isContacts }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="Contacts" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div style="padding:6px 20px 14px;display:flex;align-items:flex-start;justify-content:space-between">
+        <div>
+          <h2 style="margin:0;font-size:32px">Contacts</h2>
+          <div style="font-size:12px;color:var(--color-neutral-600);letter-spacing:0.03em;margin-top:2px">{{ appContactCount }} on DIALR</div>
+        </div>
+        <div onClick="{{ onManageAccess }}" title="Manage contact access" style="width:44px;height:44px;flex:none;display:grid;place-items:center;border:2px solid var(--color-divider);cursor:pointer">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:9px 20px;border-top:2px solid var(--color-divider);border-bottom:1px solid var(--color-divider);background:var(--color-surface)">
+        <span style="font-size:11px;line-height:1.4;color:var(--color-neutral-700)">Matched automatically from your phone's contacts — only people who use DIALR appear here.</span>
+      </div>
+      <div style="flex:1;overflow:auto">
+        <sc-for list="{{ appContacts }}" as="item" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;gap:14px;padding:13px 20px;border-bottom:1px solid var(--color-divider)">
+            <div style="width:46px;height:46px;flex:none;border:2px solid var(--color-divider);display:grid;place-items:center;font-family:var(--font-heading);font-weight:800;font-size:15px">{{ item.initials }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-family:var(--font-heading);font-weight:800;font-size:17px">{{ item.name }}</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--color-accent);letter-spacing:0.06em;text-transform:uppercase;font-family:var(--font-heading);font-weight:800;margin-top:2px">
+                <span style="width:6px;height:6px;background:var(--color-accent);display:inline-block"></span>On DIALR
+              </div>
+            </div>
+            <div onClick="{{ item.onVoice }}" title="Voice call" style="width:40px;height:40px;flex:none;display:grid;place-items:center;border:2px solid var(--color-divider);cursor:pointer">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+            </div>
+            <div onClick="{{ item.onVideo }}" title="Video call" style="width:40px;height:40px;flex:none;display:grid;place-items:center;background:var(--color-accent);color:var(--color-bg);cursor:pointer">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="0"/></svg>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;border-top:2px solid var(--color-divider)">
+        <div onClick="{{ onNavRecents }}" style="{{ tabRecentsStyle }}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Recents
+        </div>
+        <div onClick="{{ onNavContacts }}" style="{{ tabContactsStyle }}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Contacts
+        </div>
+        <div onClick="{{ onNavSettings }}" style="{{ tabSettingsStyle }}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>Settings
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ═══ INCOMING ═══ -->
+    <sc-if value="{{ isIncoming }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="Incoming call" style="flex:1;display:flex;flex-direction:column;padding:30px 24px 28px;min-height:0">
+      <div style="font-size:11px;letter-spacing:0.16em;color:var(--color-accent);font-family:var(--font-heading);font-weight:800">INCOMING · {{ modeLabel }} CALL</div>
+      <div style="width:132px;height:132px;margin:34px 0 24px;border:2px solid var(--color-text);display:grid;place-items:center;font-family:var(--font-heading);font-weight:800;font-size:46px;background:repeating-linear-gradient(135deg,#e2e0e0,#e2e0e0 9px,#eae9e9 9px,#eae9e9 18px)">{{ contactInitials }}</div>
+      <h1 style="margin:0;font-size:44px;line-height:0.98">{{ contactName }}</h1>
+      <div style="margin-top:10px;color:var(--color-neutral-600);font-size:14px;letter-spacing:0.02em">mobile · calling…</div>
+      <div style="flex:1"></div>
+      <div onClick="{{ onDecline }}" style="display:flex;align-items:center;gap:12px;padding:17px 18px;border:2px solid var(--color-divider);cursor:pointer;font-family:var(--font-heading);font-weight:800;font-size:15px;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:12px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>Decline
+      </div>
+      <div onClick="{{ onAccept }}" style="display:flex;align-items:center;gap:12px;padding:17px 18px;background:var(--color-accent);color:var(--color-bg);cursor:pointer;font-family:var(--font-heading);font-weight:800;font-size:15px;text-transform:uppercase;letter-spacing:0.03em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>Accept
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ═══ VOICE CALL ═══ -->
+    <sc-if value="{{ isVoiceCall }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="Voice call" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px">
+        <div style="font-size:11px;letter-spacing:0.16em;color:var(--color-accent);font-family:var(--font-heading);font-weight:800">VOICE CALL</div>
+        <div style="width:132px;height:132px;border:2px solid var(--color-text);display:grid;place-items:center;font-family:var(--font-heading);font-weight:800;font-size:46px;background:repeating-linear-gradient(135deg,#e2e0e0,#e2e0e0 9px,#eae9e9 9px,#eae9e9 18px)">{{ contactInitials }}</div>
+        <h1 style="margin:0;font-size:40px;text-align:center">{{ contactName }}</h1>
+        <div style="font-family:var(--font-heading);font-weight:800;font-size:18px;letter-spacing:0.04em;color:var(--color-neutral-700)">{{ elapsedStr }}</div>
+      </div>
+      <div style="border-top:2px solid var(--color-divider);padding:24px 26px 30px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:24px">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px;width:78px">
+            <div onClick="{{ onMute }}" style="{{ muteStyle }}">
+              <sc-if value="{{ muted }}" hint-placeholder-val="{{ true }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="2" x2="22" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" y1="19" x2="12" y2="22"/></svg></sc-if>
+              <sc-if value="{{ notMuted }}" hint-placeholder-val="{{ true }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></sc-if>
+            </div>
+            <span style="font-size:10px;letter-spacing:0.06em;font-family:var(--font-heading);font-weight:800;text-transform:uppercase;color:var(--color-neutral-700)">{{ muteLabel }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px;width:78px">
+            <div onClick="{{ onSpeaker }}" style="{{ spkStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></div>
+            <span style="font-size:10px;letter-spacing:0.06em;font-family:var(--font-heading);font-weight:800;text-transform:uppercase;color:var(--color-neutral-700)">{{ spkLabel }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px;width:78px">
+            <div onClick="{{ onToVideo }}" style="{{ ctrlStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="0"/></svg></div>
+            <span style="font-size:10px;letter-spacing:0.06em;font-family:var(--font-heading);font-weight:800;text-transform:uppercase;color:var(--color-neutral-700)">Video</span>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:center">
+          <div onClick="{{ onEnd }}" title="End call" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:13px 26px;background:var(--color-accent);color:var(--color-bg);cursor:pointer;font-family:var(--font-heading);font-weight:800;font-size:14px;text-transform:uppercase;letter-spacing:0.03em">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform:rotate(135deg)"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>End
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ═══ VIDEO CALL ═══ -->
+    <sc-if value="{{ isVideoCall }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="Video call" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div style="flex:1;position:relative;background:repeating-linear-gradient(135deg,#2c2a29,#2c2a29 12px,#242221 12px,#242221 24px);overflow:hidden">
+        <div style="position:absolute;inset:0;display:grid;place-items:center;color:rgba(243,242,242,0.26);font-family:monospace;font-size:12px;letter-spacing:0.24em">REMOTE VIDEO</div>
+        <div style="position:absolute;top:16px;left:16px;color:#f3f2f2">
+          <div style="font-family:var(--font-heading);font-weight:800;font-size:21px">{{ contactName }}</div>
+          <div style="font-size:12px;letter-spacing:0.06em;opacity:0.82;margin-top:2px">{{ elapsedStr }}</div>
+        </div>
+        <sc-if value="{{ showSelfView }}" hint-placeholder-val="{{ true }}">
+        <div style="position:absolute;bottom:16px;right:16px;width:96px;height:128px;border:2px solid #f3f2f2;background:repeating-linear-gradient(135deg,#4a4746,#4a4746 8px,#393635 8px,#393635 16px);display:flex;flex-direction:column;justify-content:flex-end;padding:7px">
+          <span style="font-family:monospace;font-size:9px;color:#f3f2f2;letter-spacing:0.1em">YOU · {{ cameraLabel }}</span>
+        </div>
+        </sc-if>
+      </div>
+      <div style="border-top:2px solid var(--color-divider);padding:24px 26px 30px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:24px">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px;width:78px">
+            <div onClick="{{ onMute }}" style="{{ muteStyle }}">
+              <sc-if value="{{ muted }}" hint-placeholder-val="{{ true }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="2" x2="22" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" y1="19" x2="12" y2="22"/></svg></sc-if>
+              <sc-if value="{{ notMuted }}" hint-placeholder-val="{{ true }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></sc-if>
+            </div>
+            <span style="font-size:10px;letter-spacing:0.06em;font-family:var(--font-heading);font-weight:800;text-transform:uppercase;color:var(--color-neutral-700)">{{ muteLabel }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px;width:78px">
+            <div onClick="{{ onSwap }}" style="{{ ctrlStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 19H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/><path d="M13 5h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-5"/><circle cx="12" cy="12" r="3"/><path d="m18 22-3-3 3-3"/><path d="m6 2 3 3-3 3"/></svg></div>
+            <span style="font-size:10px;letter-spacing:0.06em;font-family:var(--font-heading);font-weight:800;text-transform:uppercase;color:var(--color-neutral-700)">Flip · {{ cameraLabel }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px;width:78px">
+            <div onClick="{{ onToVoice }}" style="{{ ctrlStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg></div>
+            <span style="font-size:10px;letter-spacing:0.06em;font-family:var(--font-heading);font-weight:800;text-transform:uppercase;color:var(--color-neutral-700)">Voice</span>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:center">
+          <div onClick="{{ onEnd }}" title="End call" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:13px 26px;background:var(--color-accent);color:var(--color-bg);cursor:pointer;font-family:var(--font-heading);font-weight:800;font-size:14px;text-transform:uppercase;letter-spacing:0.03em">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform:rotate(135deg)"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>End
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ═══ SETTINGS ═══ -->
+    <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="Settings" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div style="padding:6px 20px 12px"><h2 style="margin:0;font-size:32px">Settings</h2></div>
+      <div style="flex:1;overflow:auto;border-top:2px solid var(--color-divider)">
+        <div style="display:flex;align-items:center;gap:18px;padding:22px 20px;border-bottom:2px solid var(--color-divider)">
+          <div style="width:88px;height:88px;flex:none;border:2px solid var(--color-text);display:grid;place-items:center;overflow:hidden;font-family:var(--font-heading);font-weight:800;font-size:32px;background:repeating-linear-gradient(135deg,#e2e0e0,#e2e0e0 9px,#eae9e9 9px,#eae9e9 18px)">
+            <sc-if value="{{ hasAvatar }}" hint-placeholder-val="{{ true }}"><img src="{{ avatarUrl }}" alt="avatar" style="width:100%;height:100%;object-fit:cover;filter:grayscale(1) contrast(1.08)"></sc-if>
+            <sc-if value="{{ noAvatar }}" hint-placeholder-val="{{ true }}"><span>{{ userInitials }}</span></sc-if>
+          </div>
+          <div>
+            <div style="font-family:var(--font-heading);font-weight:800;font-size:22px;line-height:1.05">{{ userName }}</div>
+            <div style="font-size:12px;color:var(--color-neutral-600);margin-top:3px">{{ userPhone }}</div>
+            <label style="display:inline-flex;align-items:center;gap:7px;margin-top:10px;padding:8px 12px;border:2px solid var(--color-divider);cursor:pointer;font-family:var(--font-heading);font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:0.04em">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3"/></svg>
+              Change photo
+              <input type="file" accept="image/*" onChange="{{ onAvatarFile }}" style="display:none">
+            </label>
+          </div>
+        </div>
+
+        <div style="padding:18px 20px 8px;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600);font-family:var(--font-heading);font-weight:800">Profile</div>
+        <div style="padding:0 20px 18px;border-bottom:2px solid var(--color-divider)">
+          <div style="margin-bottom:14px">
+            <label style="display:block;font-size:12px;margin-bottom:6px;color:var(--color-neutral-700)">Display name</label>
+            <input value="{{ userName }}" onChange="{{ onNameInput }}" style="width:100%;min-height:46px;padding:11px 12px;font:inherit;font-size:15px;background:var(--color-surface);border:2px solid var(--color-divider);color:var(--color-text)">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;margin-bottom:6px;color:var(--color-neutral-700)">Phone number</label>
+            <div style="display:flex;gap:10px">
+              <div style="flex:1;min-height:46px;padding:11px 12px;background:var(--color-surface);border:2px solid var(--color-divider);display:flex;align-items:center;font-size:15px">{{ userPhone }}</div>
+              <div onClick="{{ onChangeNumber }}" style="flex:none;display:flex;align-items:center;padding:0 16px;background:var(--color-accent);color:var(--color-bg);cursor:pointer;font-family:var(--font-heading);font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:0.04em">Change</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="padding:18px 20px 8px;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600);font-family:var(--font-heading);font-weight:800">Account</div>
+        <div onClick="{{ onManageAccess }}" style="display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-top:1px solid var(--color-divider);cursor:pointer">
+          <span style="font-family:var(--font-heading);font-weight:800;font-size:15px">Contact access</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-500)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div onClick="{{ onNavRegister }}" style="display:flex;align-items:center;padding:15px 20px;border-top:1px solid var(--color-divider);border-bottom:1px solid var(--color-divider);cursor:pointer">
+          <span style="font-family:var(--font-heading);font-weight:800;font-size:15px;color:var(--color-accent)">Sign out</span>
+        </div>
+      </div>
+      <div style="display:flex;border-top:2px solid var(--color-divider)">
+        <div onClick="{{ onNavRecents }}" style="{{ tabRecentsStyle }}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Recents
+        </div>
+        <div onClick="{{ onNavContacts }}" style="{{ tabContactsStyle }}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Contacts
+        </div>
+        <div onClick="{{ onNavSettings }}" style="{{ tabSettingsStyle }}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>Settings
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ═══ REGISTER · PHONE ═══ -->
+    <sc-if value="{{ isRegPhone }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="Register — phone" style="flex:1;display:flex;flex-direction:column;padding:34px 24px 28px">
+      <div style="font-family:var(--font-heading);font-weight:800;font-size:26px;letter-spacing:-0.01em">DIALR</div>
+      <div style="height:36px"></div>
+      <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-accent);font-family:var(--font-heading);font-weight:800">Step 1 of 2</div>
+      <h1 style="margin:8px 0 0;font-size:40px;line-height:1">Your number</h1>
+      <p style="margin:12px 0 0;font-size:14px;line-height:1.55;color:var(--color-neutral-700)">We'll text a 6-digit code to verify this device. Message and data rates may apply.</p>
+      <div style="height:28px"></div>
+      <label style="display:block;font-size:12px;margin-bottom:6px;color:var(--color-neutral-700)">Phone number</label>
+      <div style="display:flex;gap:10px">
+        <div style="flex:none;min-height:50px;background:var(--color-surface);border:2px solid var(--color-divider);display:flex;align-items:center;padding-left:12px">
+          <span style="font-family:var(--font-heading);font-weight:800;font-size:16px">+</span>
+          <input value="{{ regCC }}" onInput="{{ onRegCCInput }}" inputmode="numeric" maxlength="5" style="width:72px;min-height:46px;padding:0 8px;font-family:var(--font-heading);font-weight:800;font-size:16px;background:transparent;border:0;color:var(--color-text);outline:none">
+        </div>
+        <input value="{{ regPhone }}" onInput="{{ onRegPhoneInput }}" inputmode="tel" placeholder="(555) 000-0000" style="flex:1;min-height:50px;padding:0 14px;font:inherit;font-size:16px;background:var(--color-surface);border:2px solid var(--color-divider);color:var(--color-text)">
+      </div>
+      <div style="flex:1"></div>
+      <div onClick="{{ onSendCode }}" style="display:flex;align-items:center;gap:10px;padding:17px 18px;background:var(--color-accent);color:var(--color-bg);cursor:pointer;font-family:var(--font-heading);font-weight:800;font-size:15px;text-transform:uppercase;letter-spacing:0.03em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>Send code
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ═══ REGISTER · CODE ═══ -->
+    <sc-if value="{{ isRegCode }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="Register — code" style="flex:1;display:flex;flex-direction:column;padding:34px 24px 28px">
+      <div onClick="{{ onNavRegister }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--color-neutral-700);font-family:var(--font-heading);font-weight:800;text-transform:uppercase;letter-spacing:0.04em;align-self:flex-start">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"><polyline points="15 18 9 12 15 6"/></svg>Back
+      </div>
+      <div style="height:28px"></div>
+      <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-accent);font-family:var(--font-heading);font-weight:800">Step 2 of 2</div>
+      <h1 style="margin:8px 0 0;font-size:40px;line-height:1">Enter code</h1>
+      <p style="margin:12px 0 0;font-size:14px;line-height:1.55;color:var(--color-neutral-700)">Sent by SMS to <strong style="font-weight:800;color:var(--color-text)">{{ regPhoneDisplay }}</strong></p>
+      <div style="height:28px"></div>
+      <input value="{{ regCode }}" onInput="{{ onRegCodeInput }}" inputmode="numeric" placeholder="000000" style="width:100%;min-height:64px;padding:0 16px;font-family:var(--font-heading);font-weight:800;font-size:34px;letter-spacing:0.42em;text-align:center;background:var(--color-surface);border:2px solid var(--color-divider);color:var(--color-text)">
+      <div style="margin-top:14px;font-size:13px;color:var(--color-accent);font-family:var(--font-heading);font-weight:800;cursor:pointer;text-transform:uppercase;letter-spacing:0.04em">Resend code</div>
+      <div style="flex:1"></div>
+      <div onClick="{{ onVerify }}" style="display:flex;align-items:center;gap:10px;padding:17px 18px;background:var(--color-accent);color:var(--color-bg);cursor:pointer;font-family:var(--font-heading);font-weight:800;font-size:15px;text-transform:uppercase;letter-spacing:0.03em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"><polyline points="4 12 10 18 20 6"/></svg>Verify
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ═══ SYSTEM PERMISSION SHEET — which contacts can DIALR see ═══ -->
+    <sc-if value="{{ showPicker }}" hint-placeholder-val="{{ true }}">
+    <div onClick="{{ onClosePicker }}" style="position:absolute;inset:0;background:color-mix(in srgb, var(--color-neutral-900) 45%, transparent);display:flex;flex-direction:column;justify-content:flex-end">
+      <div onClick="{{ onSheetClick }}" style="background:var(--color-bg);border-top:2px solid var(--color-text);height:82%;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:16px 20px;border-bottom:2px solid var(--color-divider)">
+          <div style="min-width:0">
+            <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-600);font-family:var(--font-heading);font-weight:800">System · Permission</div>
+            <h3 style="margin:4px 0 0;font-size:23px;line-height:1.05">Contacts DIALR can see</h3>
+          </div>
+          <div onClick="{{ onClosePicker }}" style="width:36px;height:36px;flex:none;display:grid;place-items:center;border:2px solid var(--color-divider);cursor:pointer">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:11px 20px;background:var(--color-surface);border-bottom:1px solid var(--color-divider)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2" style="flex:none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+          <span style="font-size:12px;line-height:1.45;color:var(--color-neutral-700)">Allow DIALR to access only the contacts you choose. Allowed contacts who use the app appear in your list.</span>
+        </div>
+        <div style="flex:1;overflow:auto">
+          <sc-for list="{{ systemContacts }}" as="item" hint-placeholder-count="9">
+            <div onClick="{{ item.onToggle }}" style="display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--color-divider);cursor:pointer">
+              <div style="width:42px;height:42px;flex:none;border:2px solid var(--color-divider);display:grid;place-items:center;font-family:var(--font-heading);font-weight:800;font-size:14px">{{ item.initials }}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--font-heading);font-weight:800;font-size:16px">{{ item.name }}</div>
+                <sc-if value="{{ item.onApp }}" hint-placeholder-val="{{ true }}"><div style="font-size:11px;color:var(--color-accent);letter-spacing:0.05em;text-transform:uppercase;font-family:var(--font-heading);font-weight:800;margin-top:1px">On DIALR</div></sc-if>
+                <sc-if value="{{ item.notOnApp }}" hint-placeholder-val="{{ true }}"><div style="font-size:11px;color:var(--color-neutral-500);letter-spacing:0.05em;margin-top:1px">Not on DIALR</div></sc-if>
+              </div>
+              <sc-if value="{{ item.granted }}" hint-placeholder-val="{{ true }}"><div style="width:26px;height:26px;flex:none;background:var(--color-accent);color:var(--color-bg);display:grid;place-items:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"><polyline points="4 12 10 18 20 6"/></svg></div></sc-if>
+              <sc-if value="{{ item.notGranted }}" hint-placeholder-val="{{ true }}"><div style="width:26px;height:26px;flex:none;border:2px solid var(--color-divider)"></div></sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:14px 20px;border-top:2px solid var(--color-divider)">
+          <div onClick="{{ onClosePicker }}" style="display:flex;align-items:center;justify-content:flex-start;padding:15px 18px;background:var(--color-accent);color:var(--color-bg);cursor:pointer;font-family:var(--font-heading);font-weight:800;font-size:14px;text-transform:uppercase;letter-spacing:0.04em">Done · {{ grantedCount }} allowed</div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1120,&quot;height&quot;:980},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Recents&quot;,&quot;Incoming&quot;,&quot;Voice call&quot;,&quot;Video call&quot;],&quot;default&quot;:&quot;Recents&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;showSelfView&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Video call&quot;},&quot;deviceTime&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;9:41&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;}}">
+class Component extends DCLogic {
+  recents = [
+    { id: 1, name: 'Mara Vance',  dir: 'missed',   mode: 'video', time: '9:41 AM' },
+    { id: 2, name: 'Theo Grant',  dir: 'incoming', mode: 'voice', time: 'Yesterday' },
+    { id: 3, name: 'Nadia Reyes', dir: 'outgoing', mode: 'voice', time: 'Yesterday' },
+    { id: 4, name: 'Owen Park',   dir: 'missed',   mode: 'video', time: 'Tuesday' },
+    { id: 5, name: 'Lena Fisk',   dir: 'outgoing', mode: 'video', time: 'Monday' },
+    { id: 6, name: 'Sam Ives',    dir: 'incoming', mode: 'voice', time: 'Monday' },
+  ];
+
+  // Auto-matched against the OS address book. onApp = this person also uses DIALR;
+  // granted = the user has allowed the app to see this OS contact (system permission).
+  contacts = [
+    { name: 'Ada Okonkwo', onApp: true,  granted: true },
+    { name: 'Bruno Salt',  onApp: false, granted: true },
+    { name: 'Lena Fisk',   onApp: true,  granted: true },
+    { name: 'Mara Vance',  onApp: true,  granted: true },
+    { name: 'Nadia Reyes', onApp: true,  granted: true },
+    { name: 'Owen Park',   onApp: true,  granted: false },
+    { name: 'Priya Nair',  onApp: true,  granted: true },
+    { name: 'Sam Ives',    onApp: false, granted: true },
+    { name: 'Theo Grant',  onApp: true,  granted: true },
+  ];
+
+  constructor(props) {
+    super(props);
+    const map = {
+      'Recents':    { screen: 'recents' },
+      'Incoming':   { screen: 'incoming', mode: 'video', contact: this.recents[0] },
+      'Voice call': { screen: 'call', mode: 'voice', contact: this.recents[2] },
+      'Video call': { screen: 'call', mode: 'video', contact: this.recents[0] },
+    };
+    const start = map[(props && props.startScreen) || 'Recents'] || map['Recents'];
+    const access = {};
+    this.contacts.forEach(c => { access[c.name] = c.granted; });
+    this.state = {
+      screen: 'recents', mode: 'video', filter: 'all',
+      muted: false, speaker: false, camera: 'front',
+      elapsed: 0, contact: null, picker: false, access,
+      userName: 'Alex Mercer', userPhone: '+1 (555) 012-3456', avatarUrl: '',
+      regCC: '1', regPhone: '', regCode: '',
+      ...start,
+    };
+  }
+
+  componentDidMount() {
+    this._t = setInterval(() => {
+      if (this.state.screen === 'call') this.setState(s => ({ elapsed: s.elapsed + 1 }));
+    }, 1000);
+  }
+  componentWillUnmount() { clearInterval(this._t); }
+
+  initials(n) { return n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(); }
+  fmt(sec) {
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  startCall(c, mode) { this.setState({ screen: 'call', mode, contact: c, elapsed: 0, muted: false, speaker: false, camera: 'front', picker: false }); }
+  showIncoming(c, mode) { this.setState({ screen: 'incoming', mode, contact: c }); }
+  accept() { this.setState({ screen: 'call', elapsed: 0, muted: false, speaker: false, camera: 'front' }); }
+  endCall() { this.setState({ screen: 'recents' }); }
+
+  renderVals() {
+    const s = this.state;
+    const c = s.contact || this.recents[0];
+    const dirMeta = {
+      missed:   { label: 'Missed',   color: 'var(--color-accent)' },
+      incoming: { label: 'Incoming', color: 'var(--color-neutral-600)' },
+      outgoing: { label: 'Outgoing', color: 'var(--color-neutral-600)' },
+    };
+    const calls = this.recents
+      .filter(r => s.filter === 'all' ? true : r.dir === 'missed')
+      .map(r => ({
+        initials: this.initials(r.name), name: r.name, time: r.time,
+        dirLabel: dirMeta[r.dir].label, dirColor: dirMeta[r.dir].color,
+        nameColor: r.dir === 'missed' ? 'var(--color-accent)' : 'var(--color-text)',
+        isOutgoing: r.dir === 'outgoing', isIncoming: r.dir !== 'outgoing',
+        isVideo: r.mode === 'video', isVoice: r.mode === 'voice',
+        modeText: r.mode === 'video' ? 'Video' : 'Voice',
+        onTap: () => this.startCall(r, r.mode),
+      }));
+
+    const sq = { width: '62px', height: '62px', display: 'grid', placeItems: 'center', cursor: 'pointer' };
+    const base = { border: '2px solid var(--color-divider)', background: 'var(--color-surface)', color: 'var(--color-text)' };
+    const on = { border: '2px solid var(--color-accent)', background: 'var(--color-accent)', color: 'var(--color-bg)' };
+
+    const navBase = {
+      display: 'flex', alignItems: 'center', padding: '14px 0',
+      borderBottom: '2px solid var(--color-divider)', cursor: 'pointer',
+      fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '15px',
+      textTransform: 'uppercase', letterSpacing: '0.02em',
+    };
+    const nav = (active) => ({ ...navBase, color: active ? 'var(--color-accent)' : 'var(--color-text)' });
+
+    const tabBase = {
+      flex: 1, padding: '12px', background: 'transparent', border: 0, cursor: 'pointer',
+      fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '13px',
+      textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text)',
+    };
+    const tabOn = { ...tabBase, background: 'var(--color-accent)', color: 'var(--color-bg)' };
+
+    const isVoiceCall = s.screen === 'call' && s.mode === 'voice';
+    const isVideoCall = s.screen === 'call' && s.mode === 'video';
+
+    return {
+      themeStyle: {
+        minHeight: '100vh', background: 'var(--color-bg)', display: 'flex',
+        gap: '52px', alignItems: 'center', justifyContent: 'center',
+        padding: '48px 40px', flexWrap: 'wrap',
+      },
+      deviceTime: this.props.deviceTime || '9:41',
+      showSelfView: this.props.showSelfView !== false,
+
+      isRecents: s.screen === 'recents',
+      isIncoming: s.screen === 'incoming',
+      isVoiceCall, isVideoCall,
+
+      calls, callCount: calls.length,
+
+      isContacts: s.screen === 'contacts',
+      appContacts: this.contacts.filter(c => c.onApp && s.access[c.name]).map(c => ({
+        name: c.name, initials: this.initials(c.name),
+        onVoice: () => this.startCall({ name: c.name }, 'voice'),
+        onVideo: () => this.startCall({ name: c.name }, 'video'),
+      })),
+      appContactCount: this.contacts.filter(c => c.onApp && s.access[c.name]).length,
+      grantedCount: this.contacts.filter(c => s.access[c.name]).length,
+
+      showPicker: s.picker,
+      systemContacts: this.contacts.map(c => ({
+        name: c.name, initials: this.initials(c.name),
+        onApp: c.onApp, notOnApp: !c.onApp,
+        granted: !!s.access[c.name], notGranted: !s.access[c.name],
+        onToggle: () => this.setState(st => ({ access: { ...st.access, [c.name]: !st.access[c.name] } })),
+      })),
+      navContactsStyle: nav(s.screen === 'contacts'),
+      tabRecentsStyle: {
+        flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+        padding: '11px 0 13px', cursor: 'pointer', fontFamily: 'var(--font-heading)', fontWeight: 800,
+        fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase',
+        color: s.screen === 'recents' ? 'var(--color-accent)' : 'var(--color-neutral-600)',
+      },
+      tabContactsStyle: {
+        flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+        padding: '11px 0 13px', cursor: 'pointer', fontFamily: 'var(--font-heading)', fontWeight: 800,
+        fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase',
+        borderLeft: '2px solid var(--color-divider)',
+        color: s.screen === 'contacts' ? 'var(--color-accent)' : 'var(--color-neutral-600)',
+      },
+      onNavContacts: () => this.setState({ screen: 'contacts' }),
+      onManageAccess: () => this.setState({ picker: true }),
+      onClosePicker: () => this.setState({ picker: false }),
+      onSheetClick: (e) => e.stopPropagation(),
+
+      // profile + registration
+      isSettings: s.screen === 'settings',
+      isRegPhone: s.screen === 'reg-phone',
+      isRegCode: s.screen === 'reg-code',
+      userName: s.userName, userPhone: s.userPhone,
+      userInitials: this.initials(s.userName || 'You'),
+      avatarUrl: s.avatarUrl, hasAvatar: !!s.avatarUrl, noAvatar: !s.avatarUrl,
+      regPhone: s.regPhone, regCC: s.regCC,
+      regPhoneDisplay: s.regPhone ? ('+' + s.regCC + ' ' + s.regPhone) : s.userPhone,
+      regCode: s.regCode,
+      canSend: s.regPhone.replace(/\D/g, '').length >= 10,
+      canVerify: s.regCode.replace(/\D/g, '').length >= 6,
+      navSettingsStyle: nav(s.screen === 'settings'),
+      navRegisterStyle: nav(s.screen === 'reg-phone' || s.screen === 'reg-code'),
+      tabSettingsStyle: {
+        flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+        padding: '11px 0 13px', cursor: 'pointer', fontFamily: 'var(--font-heading)', fontWeight: 800,
+        fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase',
+        borderLeft: '2px solid var(--color-divider)',
+        color: s.screen === 'settings' ? 'var(--color-accent)' : 'var(--color-neutral-600)',
+      },
+      onNavSettings: () => this.setState({ screen: 'settings' }),
+      onNavRegister: () => this.setState({ screen: 'reg-phone', regPhone: '', regCode: '' }),
+      onRegPhoneInput: (e) => this.setState({ regPhone: e.target.value }),
+      onRegCCInput: (e) => this.setState({ regCC: e.target.value.replace(/\D/g, '').slice(0, 5) }),
+      onSendCode: () => { if (this.state.regPhone.replace(/\D/g, '').length >= 10) this.setState({ screen: 'reg-code', regCode: '' }); },
+      onRegCodeInput: (e) => this.setState({ regCode: e.target.value.replace(/\D/g, '').slice(0, 6) }),
+      onVerify: () => { if (this.state.regCode.replace(/\D/g, '').length >= 6) this.setState({ screen: 'settings', userPhone: this.state.regPhone ? ('+' + this.state.regCC + ' ' + this.state.regPhone) : this.state.userPhone }); },
+      onNameInput: (e) => this.setState({ userName: e.target.value }),
+      onAvatarFile: (e) => { const f = e.target.files && e.target.files[0]; if (f) this.setState({ avatarUrl: URL.createObjectURL(f) }); },
+      onChangeNumber: () => this.setState({ screen: 'reg-phone', regPhone: '', regCode: '' }),
+      allTabStyle: s.filter === 'all' ? { ...tabOn, borderRight: '2px solid var(--color-divider)' } : { ...tabBase, borderRight: '2px solid var(--color-divider)' },
+      missedTabStyle: s.filter === 'missed' ? tabOn : tabBase,
+
+      contactName: c.name, contactInitials: this.initials(c.name),
+      modeLabel: s.mode === 'video' ? 'VIDEO' : 'VOICE',
+      elapsedStr: this.fmt(s.elapsed),
+      cameraLabel: s.camera === 'front' ? 'FRONT' : 'BACK',
+
+      muted: s.muted, notMuted: !s.muted,
+      muteLabel: s.muted ? 'Muted' : 'Mute',
+      speaker: s.speaker, spkLabel: s.speaker ? 'On' : 'Speaker',
+      muteStyle: { ...sq, ...(s.muted ? on : base) },
+      spkStyle: { ...sq, ...(s.speaker ? on : base) },
+      ctrlStyle: { ...sq, ...base },
+
+      navRecentsStyle: nav(s.screen === 'recents'),
+      navIncomingStyle: nav(s.screen === 'incoming'),
+      navVoiceStyle: nav(isVoiceCall),
+      navVideoStyle: nav(isVideoCall),
+
+      onNavRecents: () => this.setState({ screen: 'recents' }),
+      onNavIncoming: () => this.showIncoming(this.recents[0], 'video'),
+      onNavVoice: () => this.startCall(this.recents[2], 'voice'),
+      onNavVideo: () => this.startCall(this.recents[0], 'video'),
+
+      onFilterAll: () => this.setState({ filter: 'all' }),
+      onFilterMissed: () => this.setState({ filter: 'missed' }),
+      onAccept: () => this.accept(),
+      onDecline: () => this.endCall(),
+      onEnd: () => this.endCall(),
+      onMute: () => this.setState(st => ({ muted: !st.muted })),
+      onSpeaker: () => this.setState(st => ({ speaker: !st.speaker })),
+      onSwap: () => this.setState(st => ({ camera: st.camera === 'front' ? 'back' : 'front' })),
+      onToVideo: () => this.setState({ mode: 'video' }),
+      onToVoice: () => this.setState({ mode: 'voice' }),
+    };
+  }
+}
+</script>
+</body>
+</html>
