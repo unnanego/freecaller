@@ -104,10 +104,10 @@ import flutter_callkit_incoming
       try? json.write(to: container.appendingPathComponent(Self.contactsFile), options: .atomic)
     }
 
-    let names = contacts.compactMap { $0["displayName"] as? String }.filter { !$0.isEmpty }
-    if !names.isEmpty {
-      INVocabulary.shared().setVocabularyStrings(NSOrderedSet(array: names), of: .contactName)
-    }
+    // INVocabulary (teaching Siri the contact names) requires the
+    // com.apple.developer.siri entitlement — it hard-throws without it.
+    // Enabled together with the SiriIntents extension (M5); the App Group
+    // snapshot above is what the extension reads.
   }
 
   // MARK: - PushKit (VoIP push → CallKit, synchronously)

@@ -17,23 +17,32 @@ export const redeemActivationCode = onCall(async (request) => {
   const db = getFirestore();
   const codeRef = db.collection("activationCodes").doc(code);
 
-  const uid = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(codeRef);
-    if (!snap.exists) {
-      throw new HttpsError("not-found", "Unknown activation code");
-    }
-    const data = snap.data()!;
-    if (data.usedAt) {
+  // Verify the code, but don't consume it yet.
+  const snap = await codeRef.get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", "Unknown activation code");
+  }
+  const data = snap.data()!;
+  if (data.usedAt) {
+    throw new HttpsError("failed-precondition", "Code already used");
+  }
+  const expiresAt = data.expiresAt as Timestamp | undefined;
+  if (!expiresAt || expiresAt.toMillis() < Date.now()) {
+    throw new HttpsError("failed-precondition", "Code expired");
+  }
+  const uid = data.uid as string;
+
+  // Mint the token FIRST — if this fails, the code stays unused.
+  const token = await getAuth().createCustomToken(uid);
+
+  // Only now consume the code, atomically guarding against a concurrent redeem.
+  await db.runTransaction(async (tx) => {
+    const fresh = await tx.get(codeRef);
+    if (fresh.data()?.usedAt) {
       throw new HttpsError("failed-precondition", "Code already used");
     }
-    const expiresAt = data.expiresAt as Timestamp | undefined;
-    if (!expiresAt || expiresAt.toMillis() < Date.now()) {
-      throw new HttpsError("failed-precondition", "Code expired");
-    }
     tx.update(codeRef, { usedAt: Timestamp.now(), deviceId });
-    return data.uid as string;
   });
 
-  const token = await getAuth().createCustomToken(uid);
   return { token, uid };
 });
