@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../data/contact_discovery.dart';
 import '../data/models.dart';
@@ -102,6 +103,23 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
           ),
           Semantics(
             button: true,
+            label: loc.inviteTitle,
+            child: InkWell(
+              onTap: _openInviteSheet,
+              child: Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                color: Mod.accent,
+                child: const ExcludeSemantics(
+                  child: Icon(Icons.person_add_alt_1, color: Mod.bg, size: 22),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: Mod.s2),
+          Semantics(
+            button: true,
             label: loc.contactAccessRow,
             child: InkWell(
               onTap: _openAccessSheet,
@@ -120,6 +138,16 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
         ],
       ),
     );
+  }
+
+  Future<void> _openInviteSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _InviteSheet(discovery: widget.discovery),
+    );
+    _load(); // the invited person may now appear as a contact
   }
 
   Widget _body(AppLocalizations loc) {
@@ -174,6 +202,131 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Invite sheet: enter a name + phone → provision the person and mutual-link,
+/// then share the returned activation code via the OS share sheet.
+class _InviteSheet extends StatefulWidget {
+  const _InviteSheet({required this.discovery});
+
+  final ContactDiscoveryRepo discovery;
+
+  @override
+  State<_InviteSheet> createState() => _InviteSheetState();
+}
+
+class _InviteSheetState extends State<_InviteSheet> {
+  final _name = TextEditingController();
+  final _phone = TextEditingController();
+  bool _sending = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  Future<void> _invite() async {
+    final name = _name.text.trim();
+    final phone = _phone.text.trim();
+    if (_sending || name.isEmpty || phone.isEmpty) return;
+    final loc = AppLocalizations.of(context)!;
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    try {
+      final code = await widget.discovery.invite(name, phone);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      await Share.share(loc.inviteShare(name, code));
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _error = loc.inviteFailed;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: Container(
+        color: Mod.surface,
+        padding: const EdgeInsets.fromLTRB(Mod.s6, Mod.s6, Mod.s6, Mod.s8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(loc.inviteTitle, style: Mod.h2()),
+            const SizedBox(height: 2),
+            Text(loc.inviteInfo, style: Mod.meta(color: Mod.neutral700)),
+            const SizedBox(height: Mod.s4),
+            _field(loc.inviteName, _name, TextInputType.name),
+            const SizedBox(height: Mod.s3),
+            _field(loc.invitePhone, _phone, TextInputType.phone),
+            if (_error != null) ...[
+              const SizedBox(height: Mod.s3),
+              Text(_error!, style: Mod.meta(color: Mod.accent)),
+            ],
+            const SizedBox(height: Mod.s6),
+            Semantics(
+              button: true,
+              label: loc.inviteTitle,
+              child: InkWell(
+                onTap: _invite,
+                child: Container(
+                  color: Mod.accent,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  alignment: Alignment.center,
+                  child: _sending
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Mod.bg),
+                        )
+                      : ExcludeSemantics(child: Text(loc.inviteTitle, style: Mod.button())),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _field(String label, TextEditingController controller, TextInputType type) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Mod.meta(color: Mod.neutral700)),
+        const SizedBox(height: 5),
+        Container(
+          decoration: BoxDecoration(
+            color: Mod.bg,
+            border: Border.all(color: Mod.divider, width: 2),
+          ),
+          child: TextField(
+            controller: controller,
+            keyboardType: type,
+            style: Mod.body(color: Mod.text),
+            decoration: const InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

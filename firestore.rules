@@ -20,6 +20,13 @@ service cloud.firestore {
       match /devices/{deviceId} {
         allow read, write: if signedIn() && request.auth.uid == uid;
       }
+
+      // Private per-user secrets (login code): the owner may read theirs; only
+      // functions write. Never exposed to other users, unlike the user doc.
+      match /private/{doc} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow write: if false;
+      }
     }
 
     match /calls/{callId} {
@@ -50,6 +57,9 @@ service cloud.firestore {
 
     // Function-only (Admin SDK): clients never touch codes directly.
     match /activationCodes/{code} {
+      allow read, write: if false;
+    }
+    match /loginCodes/{code} {
       allow read, write: if false;
     }
   }

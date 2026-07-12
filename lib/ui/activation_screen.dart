@@ -27,7 +27,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
       _error = null;
     });
     try {
-      await widget.auth.redeemActivationCode(_code.text.trim());
+      await widget.auth.signInWithCode(_code.text.trim());
       // Auth state stream rebuilds the app into the home screen.
     } catch (e) {
       setState(() {

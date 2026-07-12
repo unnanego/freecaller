@@ -26,16 +26,25 @@ class AuthService {
     return id;
   }
 
-  /// The app's only sign-in path: a one-time 6-digit code provisioned by
-  /// the family admin, exchanged for a custom auth token. Sign-in persists
-  /// for the life of the install — no re-login ever.
-  Future<void> redeemActivationCode(String code) async {
-    final result = await _functions.httpsCallable('redeemActivationCode').call({
+  /// Sign in with a 6-digit code — either a one-time invite code or the user's
+  /// permanent login code (shown in Settings, reusable on any device).
+  Future<void> signInWithCode(String code) async {
+    final result = await _functions.httpsCallable('signInWithCode').call({
       'code': code,
       'deviceId': await deviceId(),
     });
     final data = Map<String, dynamic>.from(result.data as Map);
     await _auth.signInWithCustomToken(data['token'] as String);
+  }
+
+  /// Backfills a permanent login code for the signed-in user if they don't have
+  /// one yet (existing accounts get one on next launch). Best-effort.
+  Future<void> ensureLoginCode() async {
+    try {
+      await _functions.httpsCallable('ensureLoginCode').call();
+    } catch (_) {
+      // Non-fatal — Settings just won't show a code until it succeeds.
+    }
   }
 
   Future<void> signOut() => _auth.signOut();

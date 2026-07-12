@@ -146,5 +146,29 @@
   "capCamera": "Камера",
   "turnOnVideo": "Включить видео",
   "turnOffVideo": "Выключить видео",
-  "save": "Сохранить"
+  "save": "Сохранить",
+  "inviteTitle": "Пригласить",
+  "inviteInfo": "Введите имя и номер телефона — появится код для входа, которым можно поделиться.",
+  "inviteName": "Имя",
+  "invitePhone": "Телефон",
+  "inviteFailed": "Не удалось пригласить. Проверьте номер и попробуйте снова.",
+  "inviteShare": "Приглашаю тебя в «Звонилку», {name}! Установи приложение и введи код для входа: {code}",
+  "@inviteShare": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "code": { "type": "String" }
+    }
+  },
+  "loginCodeLabel": "Ваш код для входа",
+  "loginCodeHint": "Понадобится, чтобы войти на другом устройстве. Никому не показывайте.",
+  "shareCode": "Поделиться кодом",
+  "loginCodeShare": "Мой код для входа в «Звонилку»: {code}",
+  "@loginCodeShare": {
+    "placeholders": {
+      "code": { "type": "String" }
+    }
+  },
+  "signOutConfirmTitle": "Выйти?",
+  "signOutConfirmBody": "Чтобы войти снова, понадобится код для входа. Сохраните его заранее (Настройки → Ваш код для входа).",
+  "cancel": "Отмена"
 }

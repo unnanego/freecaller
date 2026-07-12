@@ -99,8 +99,10 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   List<Contact> _contacts = const [];
   List<CallDoc> _recents = const [];
   ContactNames _names = ContactNames.empty;
+  String? _loginCode;
   CallOutcome _announcedOutcome = CallOutcome.none;
 
+  StreamSubscription<String?>? _loginCodeSub;
   StreamSubscription<List<Contact>>? _contactsSub;
   StreamSubscription<OutgoingCallRequest>? _siriSub;
   StreamSubscription<RemoteMessage>? _fcmForeground;
@@ -173,6 +175,12 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     });
 
     _loadNames();
+    // Ensure a permanent login code exists, then surface it in Settings.
+    _s.auth.ensureLoginCode();
+    _loginCodeSub = _s.users.watchLoginCode(widget.uid).listen(
+      (code) { if (mounted) setState(() => _loginCode = code); },
+      onError: (Object e) => log('login code', error: e),
+    );
     _s.callUi.requestPermissions().catchError((Object e) => log('permissions', error: e));
     _s.pushRegistrar.register().catchError((Object e) => log('register', error: e));
 
@@ -260,6 +268,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _loginCodeSub?.cancel();
     _contactsSub?.cancel();
     _siriSub?.cancel();
     _fcmForeground?.cancel();
@@ -286,6 +295,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       profile: profile,
       recents: _recents,
       names: _names,
+      loginCode: _loginCode,
       discovery: _s.discovery,
       onCall: (contact, {required video}) => engine.startCall(contact, video: video),
       onSignOut: _s.auth.signOut,

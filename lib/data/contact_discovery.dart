@@ -72,6 +72,17 @@ class ContactDiscoveryRepo {
   Future<bool> hasPermission() =>
       fc.FlutterContacts.permissions.has(fc.PermissionType.read);
 
+  /// Invites someone by name + phone: provisions/links them and returns a
+  /// one-time activation code to share out-of-band (the invitee redeems it to
+  /// sign in). No SMS is sent — the inviter shares the code via their messenger.
+  Future<String> invite(String name, String phone) async {
+    final result = await _functions.httpsCallable('inviteContact').call({
+      'name': name,
+      'phone': phone,
+    });
+    return Map<String, dynamic>.from(result.data as Map)['code'] as String;
+  }
+
   /// Requests contacts access. If the OS won't prompt again (already decided),
   /// opens the app's Settings page so the user can flip it on. Returns whether
   /// access is granted now.

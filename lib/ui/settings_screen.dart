@@ -1,24 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../data/contact_discovery.dart';
 import '../data/models.dart';
 import 'contact_access_sheet.dart';
 import 'theme/modernist.dart';
 
-/// Profile + account. Display name and phone are provisioned server-side (user
-/// docs are admin-only), so they're read-only here for now; editing them is a
-/// follow-up that needs a backend write path.
+/// Profile + account. Shows the reusable login code (needed to sign back in on
+/// another device) and guards sign-out with a confirmation.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({
     super.key,
     required this.profile,
+    required this.loginCode,
     required this.discovery,
     required this.onSignOut,
     required this.onSaveName,
   });
 
   final UserProfile profile;
+  final String? loginCode;
   final ContactDiscoveryRepo discovery;
   final Future<void> Function() onSignOut;
   final Future<void> Function(String name) onSaveName;
@@ -78,6 +80,7 @@ class SettingsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(Mod.s6, Mod.s4, Mod.s6, Mod.s2),
             child: Text(loc.sectionAccount, style: Mod.kicker(color: Mod.neutral600)),
           ),
+          if (loginCode != null) _loginCodeBlock(context, loc, loginCode!),
           _row(
             context,
             label: loc.contactAccessRow,
@@ -93,11 +96,83 @@ class SettingsScreen extends StatelessWidget {
             context,
             label: loc.signOut,
             labelColor: Mod.accent,
-            onTap: onSignOut,
+            onTap: () => _confirmSignOut(context, loc),
           ),
         ],
       ),
     );
+  }
+
+  /// The reusable login code + a share button, so the user can save/relay it.
+  Widget _loginCodeBlock(BuildContext context, AppLocalizations loc, String code) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Mod.s6, Mod.s3, Mod.s6, Mod.s3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(loc.loginCodeLabel, style: Mod.meta(color: Mod.neutral700)),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 52,
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Mod.surface,
+                    border: Border.all(color: Mod.divider, width: 2),
+                  ),
+                  child: Text(code,
+                      style: Mod.h2().copyWith(fontSize: 28, letterSpacing: 4)),
+                ),
+              ),
+              const SizedBox(width: Mod.s2),
+              Semantics(
+                button: true,
+                label: loc.shareCode,
+                child: InkWell(
+                  onTap: () => Share.share(loc.loginCodeShare(code)),
+                  child: Container(
+                    height: 52,
+                    width: 52,
+                    alignment: Alignment.center,
+                    color: Mod.accent,
+                    child: const ExcludeSemantics(
+                      child: Icon(Icons.ios_share, color: Mod.bg, size: 22),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(loc.loginCodeHint, style: Mod.meta(color: Mod.neutral600)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmSignOut(BuildContext context, AppLocalizations loc) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Mod.bg,
+        title: Text(loc.signOutConfirmTitle, style: Mod.h2().copyWith(fontSize: 20)),
+        content: Text(loc.signOutConfirmBody, style: Mod.body(color: Mod.text)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(loc.cancel, style: Mod.button(color: Mod.text)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(loc.signOut, style: Mod.button(color: Mod.accent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await onSignOut();
   }
 
   Widget _readonlyField(String label, String value) {

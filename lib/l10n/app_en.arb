@@ -146,5 +146,29 @@
   "capCamera": "Flip",
   "turnOnVideo": "Turn on video",
   "turnOffVideo": "Turn off video",
-  "save": "Save"
+  "save": "Save",
+  "inviteTitle": "Invite",
+  "inviteInfo": "Enter a name and phone number — you'll get a sign-in code to share.",
+  "inviteName": "Name",
+  "invitePhone": "Phone",
+  "inviteFailed": "Couldn't create the invite. Check the number and try again.",
+  "inviteShare": "Join me on Zvonilka, {name}! Install the app and enter this sign-in code: {code}",
+  "@inviteShare": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "code": { "type": "String" }
+    }
+  },
+  "loginCodeLabel": "Your login code",
+  "loginCodeHint": "You'll need it to sign in on another device. Keep it private.",
+  "shareCode": "Share code",
+  "loginCodeShare": "My Zvonilka login code: {code}",
+  "@loginCodeShare": {
+    "placeholders": {
+      "code": { "type": "String" }
+    }
+  },
+  "signOutConfirmTitle": "Sign out?",
+  "signOutConfirmBody": "To sign back in you'll need your login code. Save it first (Settings → Your login code).",
+  "cancel": "Cancel"
 }

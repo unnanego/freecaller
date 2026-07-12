@@ -8,6 +8,8 @@ initializeApp();
 setGlobalOptions({ region: "europe-west3", maxInstances: 10 });
 
 export { redeemActivationCode } from "./activation";
+export { inviteContact } from "./invite";
+export { signInWithCode, ensureLoginCode } from "./auth";
 export { mintLiveKitToken } from "./livekit";
 export { onCallCreated, onCallEnded, sweepStaleCalls } from "./calls";
 export { matchContacts } from "./contacts";

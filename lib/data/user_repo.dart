@@ -11,6 +11,13 @@ class UserRepo {
   Future<void> updateDisplayName(String uid, String name) =>
       _db.collection('users').doc(uid).update({'displayName': name});
 
+  /// The user's permanent login code (owner-only private doc) — shown in
+  /// Settings so they can sign back in on another device.
+  Stream<String?> watchLoginCode(String uid) => _db
+      .doc('users/$uid/private/creds')
+      .snapshots()
+      .map((doc) => doc.data()?['loginCode'] as String?);
+
   Stream<UserProfile?> watchProfile(String uid) => _db
       .collection('users')
       .doc(uid)

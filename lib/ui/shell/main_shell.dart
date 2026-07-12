@@ -15,6 +15,7 @@ class MainShell extends StatefulWidget {
     required this.profile,
     required this.recents,
     required this.names,
+    required this.loginCode,
     required this.discovery,
     required this.onCall,
     required this.onSignOut,
@@ -24,6 +25,7 @@ class MainShell extends StatefulWidget {
   final UserProfile profile;
   final List<CallDoc> recents;
   final ContactNames names;
+  final String? loginCode;
   final ContactDiscoveryRepo discovery;
   final void Function(Contact contact, {required bool video}) onCall;
   final Future<void> Function() onSignOut;
@@ -52,6 +54,7 @@ class _MainShellState extends State<MainShell> {
           ContactsScreen(discovery: widget.discovery, onCall: widget.onCall),
           SettingsScreen(
             profile: widget.profile,
+            loginCode: widget.loginCode,
             discovery: widget.discovery,
             onSignOut: widget.onSignOut,
             onSaveName: widget.onSaveName,
