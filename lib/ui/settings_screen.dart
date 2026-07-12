@@ -132,7 +132,8 @@ class SettingsScreen extends StatelessWidget {
                 button: true,
                 label: loc.shareCode,
                 child: InkWell(
-                  onTap: () => Share.share(loc.loginCodeShare(code)),
+                  onTap: () => SharePlus.instance
+                      .share(ShareParams(text: loc.loginCodeShare(code))),
                   child: Container(
                     height: 52,
                     width: 52,

@@ -243,7 +243,7 @@ class _InviteSheetState extends State<_InviteSheet> {
       final code = await widget.discovery.invite(name, phone);
       if (!mounted) return;
       Navigator.of(context).pop();
-      await Share.share(loc.inviteShare(name, code));
+      await SharePlus.instance.share(ShareParams(text: loc.inviteShare(name, code)));
     } catch (_) {
       if (mounted) {
         setState(() {
