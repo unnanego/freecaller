@@ -20,6 +20,7 @@ class MainShell extends StatefulWidget {
     required this.onCall,
     required this.onSignOut,
     required this.onSaveName,
+    required this.onReport,
   });
 
   final UserProfile profile;
@@ -30,6 +31,7 @@ class MainShell extends StatefulWidget {
   final void Function(Contact contact, {required bool video}) onCall;
   final Future<void> Function() onSignOut;
   final Future<void> Function(String name) onSaveName;
+  final Future<void> Function(String message) onReport;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -58,6 +60,7 @@ class _MainShellState extends State<MainShell> {
             discovery: widget.discovery,
             onSignOut: widget.onSignOut,
             onSaveName: widget.onSaveName,
+            onReport: widget.onReport,
           ),
         ],
       ),

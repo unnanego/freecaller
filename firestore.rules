@@ -55,6 +55,14 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // In-app child-safety reports: any signed-in user may file one; clients
+    // never read or modify them (reviewed out-of-band via the Admin SDK).
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterUid == request.auth.uid;
+      allow read, update, delete: if false;
+    }
+
     // Function-only (Admin SDK): clients never touch codes directly.
     match /activationCodes/{code} {
       allow read, write: if false;

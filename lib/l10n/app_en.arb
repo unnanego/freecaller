@@ -130,6 +130,13 @@
   "fieldDisplayName": "Display name",
   "fieldPhone": "Phone number",
   "contactAccessRow": "Contact access",
+  "safetyRow": "Child safety",
+  "safetyTitle": "Report a concern",
+  "safetyInfo": "Describe a child-safety concern. We'll review your report and take action.",
+  "safetyHint": "Describe what happened",
+  "safetySend": "Send",
+  "safetyThanks": "Thank you. We've received your report and will review it.",
+  "safetyFailed": "Couldn't send. Please try again.",
   "signOut": "Sign out",
   "callTimer": "{time}",
   "@callTimer": {

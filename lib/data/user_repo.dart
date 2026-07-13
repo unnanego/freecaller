@@ -11,6 +11,16 @@ class UserRepo {
   Future<void> updateDisplayName(String uid, String name) =>
       _db.collection('users').doc(uid).update({'displayName': name});
 
+  /// Files an in-app child-safety report into `reports`. Kept fully in-app (no
+  /// email/browser hand-off) to satisfy the store child-safety requirement.
+  Future<void> submitSafetyReport(String uid, String message) =>
+      _db.collection('reports').add({
+        'reporterUid': uid,
+        'type': 'child_safety',
+        'message': message,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
   /// The user's permanent login code (owner-only private doc) — shown in
   /// Settings so they can sign back in on another device.
   Stream<String?> watchLoginCode(String uid) => _db

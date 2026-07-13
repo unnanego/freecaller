@@ -300,6 +300,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       onCall: (contact, {required video}) => engine.startCall(contact, video: video),
       onSignOut: _s.auth.signOut,
       onSaveName: (name) => _s.users.updateDisplayName(profile.uid, name),
+      onReport: (message) => _s.users.submitSafetyReport(profile.uid, message),
     );
   }
 }

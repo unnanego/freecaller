@@ -17,6 +17,7 @@ class SettingsScreen extends StatelessWidget {
     required this.discovery,
     required this.onSignOut,
     required this.onSaveName,
+    required this.onReport,
   });
 
   final UserProfile profile;
@@ -24,6 +25,7 @@ class SettingsScreen extends StatelessWidget {
   final ContactDiscoveryRepo discovery;
   final Future<void> Function() onSignOut;
   final Future<void> Function(String name) onSaveName;
+  final Future<void> Function(String message) onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -90,6 +92,17 @@ class SettingsScreen extends StatelessWidget {
               isScrollControlled: true,
               backgroundColor: Colors.transparent,
               builder: (_) => ContactAccessSheet(discovery: discovery),
+            ),
+          ),
+          _row(
+            context,
+            label: loc.safetyRow,
+            trailing: const Icon(Icons.chevron_right, color: Mod.text),
+            onTap: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => _SafetyReportSheet(onReport: onReport),
             ),
           ),
           _row(
@@ -333,4 +346,126 @@ class _EditableNameFieldState extends State<_EditableNameField> {
       ),
     );
   }
+}
+
+/// In-app child-safety report: a text field + Send, filed straight to the
+/// backend so a user can report a concern **without leaving the app** (store
+/// child-safety requirement). Shows a thank-you state on success.
+class _SafetyReportSheet extends StatefulWidget {
+  const _SafetyReportSheet({required this.onReport});
+
+  final Future<void> Function(String message) onReport;
+
+  @override
+  State<_SafetyReportSheet> createState() => _SafetyReportSheetState();
+}
+
+class _SafetyReportSheetState extends State<_SafetyReportSheet> {
+  final _text = TextEditingController();
+  bool _sending = false;
+  bool _sent = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final msg = _text.text.trim();
+    if (_sending || msg.isEmpty) return;
+    final loc = AppLocalizations.of(context)!;
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    try {
+      await widget.onReport(msg);
+      if (mounted) setState(() { _sending = false; _sent = true; });
+    } catch (_) {
+      if (mounted) setState(() { _sending = false; _error = loc.safetyFailed; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: Container(
+        color: Mod.bg,
+        padding: const EdgeInsets.all(Mod.s6),
+        child: SafeArea(top: false, child: _sent ? _thanks(loc) : _form(loc)),
+      ),
+    );
+  }
+
+  Widget _thanks(AppLocalizations loc) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(loc.safetyTitle, style: Mod.h2()),
+          const SizedBox(height: Mod.s4),
+          Text(loc.safetyThanks, style: Mod.body(color: Mod.text)),
+          const SizedBox(height: Mod.s6),
+          _button(loc.close, () => Navigator.of(context).pop()),
+        ],
+      );
+
+  Widget _form(AppLocalizations loc) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(loc.safetyTitle, style: Mod.h2()),
+          const SizedBox(height: Mod.s3),
+          Text(loc.safetyInfo, style: Mod.meta(color: Mod.neutral700)),
+          const SizedBox(height: Mod.s4),
+          Container(
+            decoration: BoxDecoration(
+              color: Mod.surface,
+              border: Border.all(color: Mod.divider, width: 2),
+            ),
+            child: TextField(
+              controller: _text,
+              minLines: 3,
+              maxLines: 6,
+              style: Mod.body(color: Mod.text),
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: loc.safetyHint,
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: Mod.s2),
+            Text(_error!, style: Mod.meta(color: Mod.accent)),
+          ],
+          const SizedBox(height: Mod.s4),
+          _button(loc.safetySend, _send, busy: _sending),
+        ],
+      );
+
+  Widget _button(String label, VoidCallback onTap, {bool busy = false}) => Semantics(
+        button: true,
+        label: label,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            height: 52,
+            alignment: Alignment.center,
+            color: Mod.accent,
+            child: busy
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Mod.bg),
+                  )
+                : ExcludeSemantics(child: Text(label, style: Mod.button())),
+          ),
+        ),
+      );
 }
