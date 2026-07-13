@@ -163,7 +163,7 @@ class _InCallScreenState extends State<InCallScreen> {
                     valueListenable:
                         _localFullscreen ? livekit.localVideo : livekit.remoteVideo,
                     builder: (context, track, _) => track != null
-                        ? VideoTrackRenderer(track)
+                        ? VideoTrackRenderer(track, fit: VideoViewFit.cover)
                         : const SizedBox.shrink(),
                   ),
                   // Name + timer overlay, top-left.
@@ -224,7 +224,8 @@ class _InCallScreenState extends State<InCallScreen> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    ExcludeSemantics(child: VideoTrackRenderer(track)),
+                    ExcludeSemantics(
+                        child: VideoTrackRenderer(track, fit: VideoViewFit.cover)),
                     // The local camera's renderer has its own tap/pinch detector
                     // (focus/zoom); an opaque overlay on top wins the swap tap.
                     GestureDetector(
