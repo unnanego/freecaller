@@ -7,6 +7,7 @@ import '../core/config.dart';
 import '../core/log.dart';
 import '../data/call_repo.dart';
 import '../data/models.dart';
+import 'call_sounds.dart';
 import 'call_ui/call_ui.dart';
 import 'livekit_service.dart';
 
@@ -62,6 +63,7 @@ class CallEngine extends ChangeNotifier {
   final String _myUid;
   final String _myName;
   final String _myPhone;
+  final CallSounds _sounds = CallSounds();
 
   EnginePhase _phase = EnginePhase.idle;
   CallSession? _session;
@@ -169,6 +171,20 @@ class CallEngine extends ChangeNotifier {
       log('startCall failed', error: e);
       await _teardown(CallOutcome.failed, writeState: CallState.ended);
       return;
+    }
+
+    // Ringback while we wait for the callee to pick up. It starts on the
+    // earpiece; if the user already turned the speaker on, re-run the exact
+    // toggle path a beat later (once the native session has settled) so the
+    // ringback moves to the speaker just like a mid-ring toggle does.
+    await _sounds.startRingback();
+    if (_livekit.speakerOn.value) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (_phase == EnginePhase.dialing && _livekit.speakerOn.value) {
+          _livekit.setSpeaker(true);
+          _sounds.setSpeaker(true);
+        }
+      });
     }
 
     _ringTimer = Timer(Config.ringTimeout, () async {
@@ -325,8 +341,11 @@ class CallEngine extends ChangeNotifier {
     }
   }
 
-  Future<void> toggleSpeaker() =>
-      _livekit.setSpeaker(!_livekit.speakerOn.value);
+  Future<void> toggleSpeaker() async {
+    final on = !_livekit.speakerOn.value;
+    await _livekit.setSpeaker(on);
+    await _sounds.setSpeaker(on); // keep the ringback on the same route
+  }
 
   Future<void> switchCamera() => _livekit.switchCamera();
 
@@ -365,6 +384,7 @@ class CallEngine extends ChangeNotifier {
         case CallState.accepted:
           if (_phase == EnginePhase.dialing) {
             _ringTimer?.cancel();
+            await _sounds.stopRingback();
             await _callUi.reportConnected(callId);
             _setPhase(EnginePhase.inCall);
           }
@@ -400,10 +420,12 @@ class CallEngine extends ChangeNotifier {
   Future<void> _teardown(CallOutcome outcome, {CallState? writeState}) async {
     log('engine: teardown outcome=$outcome write=$writeState (phase=$_phase)');
     final session = _session;
+    final wasConnected = _phase == EnginePhase.inCall;
     _ringTimer?.cancel();
     _ringTimer = null;
     _docWatch?.cancel();
     _docWatch = null;
+    await _sounds.stopRingback();
 
     if (session != null && writeState != null) {
       try {
@@ -417,6 +439,8 @@ class CallEngine extends ChangeNotifier {
     if (session != null) {
       await _callUi.end(session.callId, EndReason.local);
     }
+    // Cue that a connected call has dropped (not for unanswered/declined rings).
+    if (wasConnected) await _sounds.playEnded();
     _session = null;
     _lastOutcome = outcome;
     _muted = false;
@@ -436,6 +460,7 @@ class CallEngine extends ChangeNotifier {
     _docWatch?.cancel();
     _mediaDrop?.cancel();
     _ringTimer?.cancel();
+    _sounds.dispose();
     super.dispose();
   }
 }
