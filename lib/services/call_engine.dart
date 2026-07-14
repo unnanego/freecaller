@@ -435,12 +435,22 @@ class CallEngine extends ChangeNotifier {
         log('teardown state write failed', error: e);
       }
     }
+    // Clear any speaker-route override while the session is still live, so the
+    // post-teardown end tone activates a clean output route. A speaker call
+    // otherwise leaves the override set and the tone plays silently.
+    if (wasConnected) {
+      try {
+        await _livekit.setSpeaker(false);
+      } catch (_) {}
+    }
     await _livekit.disconnect();
     if (session != null) {
       await _callUi.end(session.callId, EndReason.local);
     }
     // Cue that a connected call has dropped (not for unanswered/declined rings).
-    if (wasConnected) await _sounds.playEnded();
+    // Fire-and-forget: it self-delays for the session to settle, so awaiting it
+    // would just hold the call screen open a beat longer.
+    if (wasConnected) unawaited(_sounds.playEnded());
     _session = null;
     _lastOutcome = outcome;
     _muted = false;

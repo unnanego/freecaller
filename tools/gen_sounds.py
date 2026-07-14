@@ -51,7 +51,7 @@ def _write(path, samples):
 _write(os.path.join(OUT, "ringback.wav"),
        _samples_tone(425, 1000, amp=0.5) + _silence(4000))
 
-# Call-ended cue: gentle descending two-tone.
+# Call-ended cue: three short 425 Hz beeps — same tone family as the ringback.
+_beep = _samples_tone(425, 220, amp=0.9)
 _write(os.path.join(OUT, "call_end.wav"),
-       _samples_tone(480, 130, amp=0.5) + _silence(30) +
-       _samples_tone(360, 220, amp=0.5))
+       _beep + _silence(110) + _beep + _silence(110) + _beep)

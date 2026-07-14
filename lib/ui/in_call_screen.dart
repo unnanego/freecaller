@@ -219,7 +219,12 @@ class _InCallScreenState extends State<InCallScreen> {
                   ),
                 ),
               ),
-              _tray([_muteButton(loc), _speakerButton(loc), _videoModeButton(loc)]),
+              _tray([
+                _muteButton(loc),
+                _speakerButton(loc),
+                // Mode switch only works once connected — hide it while ringing.
+                if (engine.phase == EnginePhase.inCall) _videoModeButton(loc),
+              ]),
             ],
           ),
         ),
@@ -303,7 +308,9 @@ class _InCallScreenState extends State<InCallScreen> {
                       child: _tray([
                         _muteButton(loc),
                         _flipButton(loc),
-                        _voiceModeButton(loc),
+                        // Mode switch only works once connected.
+                        if (engine.phase == EnginePhase.inCall)
+                          _voiceModeButton(loc),
                       ]),
                     ),
                   ),

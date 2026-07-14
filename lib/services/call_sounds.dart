@@ -85,11 +85,29 @@ class CallSounds {
     }
   }
 
-  /// One-shot tone when a call ends.
+  /// One-shot tone when a call ends. Plays through a fresh playback session:
+  /// by teardown the call's audio session is being deactivated (CallKit/WebRTC),
+  /// so we wait a beat for that to settle, then activate a plain playback
+  /// context so the tone is audible regardless of the prior route.
   Future<void> playEnded() async {
     try {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await AudioPlayer.global.setAudioContext(AudioContext(
+        // Exclusive playback (no mixWithOthers): after a speaker call the torn-
+        // down session's route lingers, and mixing into it plays silently — an
+        // exclusive activation forces a fresh route so the tone is always heard.
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.playback,
+          options: const {},
+        ),
+        android: AudioContextAndroid(
+          contentType: AndroidContentType.sonification,
+          usageType: AndroidUsageType.notification,
+          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+        ),
+      ));
       await _effect.stop();
-      await _effect.setVolume(0.85);
+      await _effect.setVolume(1.0);
       await _effect.play(AssetSource('sounds/call_end.wav'));
     } catch (e) {
       log('call sounds: end tone failed', error: e);
