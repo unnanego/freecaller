@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../data/contact_discovery.dart';
 import '../data/models.dart';
-import 'contact_access_sheet.dart';
 import 'theme/modernist.dart';
 
 /// People from the OS address book who also use the app, auto-matched by phone
-/// number. No manual add — the shield opens the granular access sheet.
+/// number.
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key, required this.discovery, required this.onCall});
 
@@ -59,16 +59,6 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
     });
   }
 
-  Future<void> _openAccessSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => ContactAccessSheet(discovery: widget.discovery),
-    );
-    _load(); // allow-list may have changed
-  }
-
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
@@ -113,24 +103,6 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
                 color: Mod.accent,
                 child: const ExcludeSemantics(
                   child: Icon(Icons.person_add_alt_1, color: Mod.bg, size: 22),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: Mod.s2),
-          Semantics(
-            button: true,
-            label: loc.contactAccessRow,
-            child: InkWell(
-              onTap: _openAccessSheet,
-              child: Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration:
-                    BoxDecoration(border: Border.all(color: Mod.divider, width: 2)),
-                child: const ExcludeSemantics(
-                  child: Icon(Icons.shield_outlined, color: Mod.text, size: 22),
                 ),
               ),
             ),
@@ -219,7 +191,9 @@ class _InviteSheet extends StatefulWidget {
 
 class _InviteSheetState extends State<_InviteSheet> {
   final _name = TextEditingController();
-  final _phone = TextEditingController();
+  // Prefilled with "+"; the formatter keeps exactly one leading "+" so the
+  // number always ends up in international E.164 format.
+  final _phone = TextEditingController(text: '+');
   bool _sending = false;
   String? _error;
 
@@ -273,7 +247,10 @@ class _InviteSheetState extends State<_InviteSheet> {
             const SizedBox(height: Mod.s4),
             _field(loc.inviteName, _name, TextInputType.name),
             const SizedBox(height: Mod.s3),
-            _field(loc.invitePhone, _phone, TextInputType.phone),
+            _field(loc.invitePhone, _phone, TextInputType.phone,
+                formatters: [_PlusPhoneFormatter()]),
+            const SizedBox(height: 5),
+            Text(loc.invitePhoneHint, style: Mod.meta(color: Mod.neutral700)),
             if (_error != null) ...[
               const SizedBox(height: Mod.s3),
               Text(_error!, style: Mod.meta(color: Mod.accent)),
@@ -304,7 +281,8 @@ class _InviteSheetState extends State<_InviteSheet> {
     );
   }
 
-  Widget _field(String label, TextEditingController controller, TextInputType type) {
+  Widget _field(String label, TextEditingController controller, TextInputType type,
+      {List<TextInputFormatter>? formatters}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -318,6 +296,7 @@ class _InviteSheetState extends State<_InviteSheet> {
           child: TextField(
             controller: controller,
             keyboardType: type,
+            inputFormatters: formatters,
             style: Mod.body(color: Mod.text),
             decoration: const InputDecoration(
               isDense: true,
@@ -348,20 +327,8 @@ class _ContactRow extends StatelessWidget {
           InitialsTile(name: contact.name),
           const SizedBox(width: Mod.s3),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(contact.name, style: Mod.name(), maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 3),
-                Row(
-                  children: [
-                    Container(width: 6, height: 6, color: Mod.accent),
-                    const SizedBox(width: 6),
-                    Text(loc.onAppBadge, style: Mod.kicker()),
-                  ],
-                ),
-              ],
-            ),
+            child: Text(contact.name,
+                style: Mod.name(), maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
           _ActionButton(
             semanticLabel: loc.callContact(contact.name),
@@ -415,6 +382,21 @@ class _ActionButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Keeps the phone field as a single leading "+" followed by digits only, so
+/// whatever the user types (extra "+", spaces, dashes) ends up as clean E.164.
+class _PlusPhoneFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final text = '+$digits';
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

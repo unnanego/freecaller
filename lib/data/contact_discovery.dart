@@ -208,11 +208,18 @@ class ContactDiscoveryRepo {
     }
   }
 
-  /// Parse to E.164 (e.g. "8 916 …" → "+7916…"), defaulting bare locals to RU.
+  /// Parse to E.164. A leading "+" carries its own country code, so parse it
+  /// as-is; only bare national numbers (no "+") default to RU. Passing
+  /// destinationCountry with a "+" number makes phone_numbers_parser IGNORE the
+  /// "+" and force RU — mangling e.g. +972… into +772… — which silently dropped
+  /// every non-Russian contact.
   String? _toE164(String raw) {
-    if (raw.trim().isEmpty) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
     try {
-      final parsed = PhoneNumber.parse(raw, destinationCountry: IsoCode.RU);
+      final parsed = trimmed.startsWith('+')
+          ? PhoneNumber.parse(trimmed)
+          : PhoneNumber.parse(trimmed, destinationCountry: IsoCode.RU);
       return parsed.isValid() ? parsed.international : null;
     } catch (_) {
       return null;
