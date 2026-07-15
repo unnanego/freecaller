@@ -36,6 +36,15 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.1
 
+dependency_overrides:
+  # Vendored + patched flutter_callkit_incoming 3.1.3 (issue #827): the stock
+  # plugin silences the Android incoming ringtone ~1s in because its volume-key
+  # receiver misreads the self-managed Telecom audio-setup VOLUME_CHANGED
+  # broadcast as a user key-press. The patch only stops the ring on a real RING-
+  # stream volume change. See third_party/flutter_callkit_incoming.
+  flutter_callkit_incoming:
+    path: third_party/flutter_callkit_incoming
+
 # App icon: white Lucide phone on the Modernist accent red. Regenerate with
 # `dart run flutter_launcher_icons` after changing assets/icon/*.
 flutter_launcher_icons:
