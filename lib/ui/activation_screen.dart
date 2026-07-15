@@ -1,3 +1,4 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
@@ -30,11 +31,14 @@ class _ActivationScreenState extends State<ActivationScreen> {
       await widget.auth.signInWithCode(_code.text.trim());
       // Auth state stream rebuilds the app into the home screen.
     } catch (e) {
+      // Say "invalid code" ONLY when the server explicitly rejected the code;
+      // everything else (offline, timeout, unavailable) is a connection problem
+      // and must not be mislabeled as a bad code.
+      final badCode = e is FirebaseFunctionsException &&
+          const {'invalid-argument', 'not-found', 'failed-precondition'}
+              .contains(e.code);
       setState(() {
-        _error = e.toString().contains('unavailable') ||
-                e.toString().contains('network')
-            ? loc.activationNetworkError
-            : loc.activationInvalid;
+        _error = badCode ? loc.activationInvalid : loc.activationNetworkError;
       });
     } finally {
       if (mounted) setState(() => _busy = false);

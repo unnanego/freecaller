@@ -7,6 +7,9 @@
   "activationSubmit": "Activate",
   "activationInvalid": "Invalid or already used code",
   "activationNetworkError": "No connection. Try again",
+  "loadError": "Couldn't load. Check your connection",
+  "retry": "Retry",
+  "useAnotherCode": "Use a different code",
   "homeNoContacts": "No contacts yet. Ask your admin",
   "callContact": "Call {name}",
   "@callContact": {
@@ -158,6 +161,7 @@
   "inviteInfo": "Enter a name and phone number — you'll get a sign-in code to share.",
   "inviteName": "Name",
   "invitePhone": "Phone",
+  "invitePhoneHint": "International format with country code, e.g. +79161234567",
   "inviteFailed": "Couldn't create the invite. Check the number and try again.",
   "inviteShare": "Join me on Zvonilka, {name}! Install the app and enter this sign-in code: {code}",
   "@inviteShare": {

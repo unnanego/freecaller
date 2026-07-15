@@ -27,8 +27,11 @@ class PushRegistrar {
     final deviceId = await _auth.deviceId();
 
     if (Platform.isAndroid) {
-      final token = await FirebaseMessaging.instance.getToken();
-      if (token != null) await _upload(uid, deviceId, fcmToken: token);
+      // Don't rely on a single getToken(): on a fresh install it can transiently
+      // return null / throw (Play Services or network still warming up), which
+      // would leave the device unregistered and unreachable for calls until a
+      // token rotation. Retry a few times; onTokenRefresh is the ongoing backstop.
+      unawaited(_uploadFcmWithRetry(uid, deviceId));
       _fcmRotation ??= FirebaseMessaging.instance.onTokenRefresh.listen(
         (token) => _upload(uid, deviceId, fcmToken: token),
       );
@@ -46,6 +49,40 @@ class PushRegistrar {
         }
       });
     }
+  }
+
+  /// Drop this device's push registration for the current account (called on
+  /// sign-out) so it stops ringing for a call to an account it has left.
+  Future<void> unregister() async {
+    await _fcmRotation?.cancel();
+    _fcmRotation = null;
+    await _voipRotation?.cancel();
+    _voipRotation = null;
+    final uid = _auth.uid;
+    if (uid == null) return;
+    try {
+      await _devices.delete(uid: uid, deviceId: await _auth.deviceId());
+    } catch (e) {
+      log('push token unregister failed', error: e);
+    }
+  }
+
+  /// Fetch the FCM token with retries and register it — a fresh install often
+  /// isn't ready to hand one out on the very first call.
+  Future<void> _uploadFcmWithRetry(String uid, String deviceId) async {
+    for (var attempt = 0; attempt < 5; attempt++) {
+      try {
+        final token = await FirebaseMessaging.instance.getToken();
+        if (token != null) {
+          await _upload(uid, deviceId, fcmToken: token);
+          return;
+        }
+      } catch (e) {
+        log('fcm getToken attempt ${attempt + 1} failed', error: e);
+      }
+      await Future<void>.delayed(Duration(seconds: (attempt + 1) * 2));
+    }
+    log('fcm getToken: still no token after retries (onTokenRefresh will cover)');
   }
 
   Future<void> _upload(String uid, String deviceId,

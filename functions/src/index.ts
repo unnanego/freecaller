@@ -12,5 +12,6 @@ export { inviteContact } from "./invite";
 export { signInWithCode, ensureLoginCode } from "./auth";
 export { mintLiveKitToken } from "./livekit";
 export { onCallCreated, onCallEnded, sweepStaleCalls } from "./calls";
+export { dedupeDeviceToken } from "./devices";
 export { matchContacts } from "./contacts";
 export { onReportCreated } from "./reports";

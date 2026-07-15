@@ -19,4 +19,15 @@ class DeviceRepo {
       'updatedAt': Timestamp.now(),
     }, SetOptions(merge: true));
   }
+
+  /// Remove this device's push registration so a signed-out device stops
+  /// receiving calls for the account it just left.
+  Future<void> delete({required String uid, required String deviceId}) {
+    return _db
+        .collection('users')
+        .doc(uid)
+        .collection('devices')
+        .doc(deviceId)
+        .delete();
+  }
 }

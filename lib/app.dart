@@ -100,8 +100,11 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   List<CallDoc> _recents = const [];
   ContactNames _names = ContactNames.empty;
   String? _loginCode;
+  bool _bootstrapFailed = false;
   CallOutcome _announcedOutcome = CallOutcome.none;
 
+  StreamSubscription<UserProfile?>? _profileBootSub;
+  Timer? _bootTimeout;
   StreamSubscription<String?>? _loginCodeSub;
   StreamSubscription<List<Contact>>? _contactsSub;
   StreamSubscription<OutgoingCallRequest>? _siriSub;
@@ -148,10 +151,32 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     ]);
   }
 
-  Future<void> _bootstrap() async {
-    final profile = await _s.users.watchProfile(widget.uid).first;
-    if (profile == null || !mounted) return;
+  void _bootstrap() {
+    _bootstrapFailed = false;
+    _bootTimeout?.cancel();
+    _profileBootSub?.cancel();
+    // A fresh install has no Firestore cache, so this first read hits the
+    // server — and a reviewer's VPN can throttle Firestore's (gRPC) connection
+    // even though HTTPS sign-in got through (that was the App Store 2.1
+    // "loads indefinitely" cause). So never hang on it: show a retry after a
+    // timeout, but KEEP listening so a slow connection still finishes bootstrap
+    // on its own, without needing another tap.
+    _bootTimeout = Timer(const Duration(seconds: 15), () {
+      if (mounted && _engine == null) setState(() => _bootstrapFailed = true);
+    });
+    _profileBootSub = _s.users.watchProfile(widget.uid).listen(
+      (profile) {
+        if (profile == null || _engine != null) return;
+        _bootTimeout?.cancel();
+        _profileBootSub?.cancel();
+        _profileBootSub = null;
+        _completeBootstrap(profile);
+      },
+      onError: (Object e) => log('bootstrap: profile stream error', error: e),
+    );
+  }
 
+  Future<void> _completeBootstrap(UserProfile profile) async {
     final engine = CallEngine(
       calls: _s.calls,
       livekit: _s.livekit,
@@ -172,6 +197,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     setState(() {
       _engine = engine;
       _profile = profile;
+      _bootstrapFailed = false; // clear the retry screen if it was showing
     });
 
     _loadNames();
@@ -230,6 +256,19 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     }, onError: (Object e) => log('recent calls', error: e));
   }
 
+  void _retryBootstrap() {
+    setState(() => _bootstrapFailed = false);
+    _bootstrap();
+  }
+
+  /// Unregister this device's push token before signing out, so it stops
+  /// ringing for the account it's leaving (a signed-out device must not keep
+  /// receiving its calls).
+  Future<void> _signOut() async {
+    await _s.pushRegistrar.unregister();
+    await _s.auth.signOut();
+  }
+
   void _onEngineChanged() {
     if (!mounted) return;
     setState(() {});
@@ -268,6 +307,8 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _bootTimeout?.cancel();
+    _profileBootSub?.cancel();
     _loginCodeSub?.cancel();
     _contactsSub?.cancel();
     _siriSub?.cancel();
@@ -282,6 +323,12 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     final engine = _engine;
     if (engine == null) {
+      if (_bootstrapFailed) {
+        return _LoadError(
+          onRetry: _retryBootstrap,
+          onUseAnotherCode: _signOut,
+        );
+      }
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (engine.phase == EnginePhase.dialing || engine.phase == EnginePhase.inCall) {
@@ -298,9 +345,74 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       loginCode: _loginCode,
       discovery: _s.discovery,
       onCall: (contact, {required video}) => engine.startCall(contact, video: video),
-      onSignOut: _s.auth.signOut,
+      onSignOut: _signOut,
       onSaveName: (name) => _s.users.updateDisplayName(profile.uid, name),
       onReport: (message) => _s.users.submitSafetyReport(profile.uid, message),
+    );
+  }
+}
+
+/// Shown when the initial profile load fails or times out, so the app can never
+/// hang on a spinner (App Store rejection 2.1) — offers a retry.
+class _LoadError extends StatelessWidget {
+  const _LoadError({required this.onRetry, required this.onUseAnotherCode});
+
+  final VoidCallback onRetry;
+  final VoidCallback onUseAnotherCode;
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+    return Scaffold(
+      backgroundColor: Mod.bg,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(Mod.s6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(loc.loadError,
+                    textAlign: TextAlign.center, style: Mod.body()),
+                const SizedBox(height: Mod.s6),
+                Semantics(
+                  button: true,
+                  label: loc.retry,
+                  child: InkWell(
+                    onTap: onRetry,
+                    child: Container(
+                      color: Mod.accent,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: Mod.s8, vertical: 16),
+                      child: ExcludeSemantics(
+                        child: Text(loc.retry, style: Mod.button()),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: Mod.s4),
+                // Escape hatch: sign out back to the activation screen so a
+                // different code can be entered if this account is stuck.
+                Semantics(
+                  button: true,
+                  label: loc.useAnotherCode,
+                  child: InkWell(
+                    onTap: onUseAnotherCode,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: Mod.s4, vertical: 12),
+                      child: ExcludeSemantics(
+                        child: Text(loc.useAnotherCode,
+                            style: Mod.name(color: Mod.accent)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
