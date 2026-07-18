@@ -7,6 +7,7 @@ import '../core/config.dart';
 import '../core/log.dart';
 import '../data/call_repo.dart';
 import '../data/models.dart';
+import 'call_locks.dart';
 import 'call_sounds.dart';
 import 'call_ui/call_ui.dart';
 import 'livekit_service.dart';
@@ -64,6 +65,7 @@ class CallEngine extends ChangeNotifier {
   final String _myName;
   final String _myPhone;
   final CallSounds _sounds = CallSounds();
+  final CallLocks _locks = CallLocks();
 
   EnginePhase _phase = EnginePhase.idle;
   CallSession? _session;
@@ -149,6 +151,10 @@ class CallEngine extends ChangeNotifier {
     _setPhase(EnginePhase.dialing);
 
     try {
+      // Keep Wi-Fi/CPU at full performance before we connect: the caller has no
+      // telecom foreground service, so on battery Wi-Fi power-save would starve
+      // WebRTC ICE and the media connect below would time out.
+      await _locks.acquire();
       await _callUi.startOutgoing(CallDisplay(
         callId: callId,
         peerName: contact.displayName,
@@ -262,6 +268,7 @@ class CallEngine extends ChangeNotifier {
     // Show the call screen immediately on answer; the LiveKit connect below
     // takes ~1-2s and shouldn't leave the user staring at the ringing UI.
     _setPhase(EnginePhase.inCall);
+    await _locks.acquire();
     await _livekit.connect(callId, video: _session?.isVideo ?? false);
     await _enableMediaWhenReady();
     await _callUi.reportConnected(callId);
@@ -444,6 +451,7 @@ class CallEngine extends ChangeNotifier {
       } catch (_) {}
     }
     await _livekit.disconnect();
+    await _locks.release();
     if (session != null) {
       await _callUi.end(session.callId, EndReason.local);
     }
@@ -471,6 +479,7 @@ class CallEngine extends ChangeNotifier {
     _mediaDrop?.cancel();
     _ringTimer?.cancel();
     _sounds.dispose();
+    _locks.release();
     super.dispose();
   }
 }

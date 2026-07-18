@@ -51,9 +51,14 @@ class LiveKitService {
     _cameraPosition = CameraPosition.front;
     final room = Room(
       roomOptions: RoomOptions(
-        // 1:1, remote always shown ~fullscreen: simulcast/adaptiveStream only
-        // downgrade quality here, so give the whole budget to one 720p stream
-        // and let the receiver always pull it at full resolution.
+        // Graceful degradation for constrained networks (e.g. Russian ISPs that
+        // throttle the direct media flow to our foreign server — audio fits but
+        // an un-adaptive 720p stream doesn't, so video used to fail outright).
+        // Simulcast publishes low fallback layers so a throttled uplink keeps
+        // sending 180p/360p instead of stalling on 720p, and the SFU forwards a
+        // low layer to a throttled receiver; healthy networks still pull 720p.
+        // adaptiveStream stays OFF: on a 1:1 fullscreen call it only risks
+        // pausing the remote feed when the render view can't be measured.
         adaptiveStream: false,
         dynacast: false,
         defaultAudioPublishOptions: const AudioPublishOptions(dtx: true),
@@ -61,7 +66,16 @@ class LiveKitService {
           cameraPosition: CameraPosition.front,
           params: VideoParametersPresets.h720_169,
         ),
-        defaultVideoPublishOptions: const VideoPublishOptions(simulcast: false),
+        defaultVideoPublishOptions: const VideoPublishOptions(
+          simulcast: true,
+          videoSimulcastLayers: [
+            VideoParametersPresets.h180_169,
+            VideoParametersPresets.h360_169,
+          ],
+          // Under bandwidth pressure, shed both resolution and framerate rather
+          // than freezing — keeps a usable low-res feed alive on a throttled link.
+          degradationPreference: DegradationPreference.balanced,
+        ),
         defaultAudioOutputOptions: AudioOutputOptions(speakerOn: video),
       ),
     );
