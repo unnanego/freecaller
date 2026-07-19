@@ -2,10 +2,29 @@ import { getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { AccessToken } from "livekit-server-sdk";
+import { createHmac } from "node:crypto";
 
 const livekitApiKey = defineSecret("LIVEKIT_API_KEY");
 const livekitApiSecret = defineSecret("LIVEKIT_API_SECRET");
 export const livekitUrl = defineString("LIVEKIT_URL");
+
+// Optional TURN relay (coturn over TLS/443) for clients on networks that
+// throttle the direct media path to the SFU. Leave TURN_URL empty to disable;
+// when set (e.g. "turns:turn-ru.example.com:443"), the token response carries
+// short-lived coturn REST credentials the client feeds to its peer connection.
+const turnUrl = defineString("TURN_URL");
+const turnSecret = defineSecret("TURN_SHARED_SECRET");
+
+/**
+ * coturn `use-auth-secret` (REST) credential: username is an expiry unix
+ * timestamp, password is base64(HMAC-SHA1(secret, username)). Credentials are
+ * ephemeral (valid ~1h), so they can be handed to the client safely.
+ */
+function turnCredentials(url: string, secret: string) {
+  const username = String(Math.floor(Date.now() / 1000) + 3600);
+  const credential = createHmac("sha1", secret).update(username).digest("base64");
+  return { urls: [url], username, credential };
+}
 
 /**
  * Mints a LiveKit room token for a call participant. Room name == callId,
@@ -13,7 +32,7 @@ export const livekitUrl = defineString("LIVEKIT_URL");
  * call is ringing or accepted.
  */
 export const mintLiveKitToken = onCall(
-  { secrets: [livekitApiKey, livekitApiSecret] },
+  { secrets: [livekitApiKey, livekitApiSecret, turnSecret] },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required");
@@ -44,6 +63,17 @@ export const mintLiveKitToken = onCall(
       canSubscribe: true,
     });
 
-    return { token: await at.toJwt(), url: livekitUrl.value() };
+    const response: {
+      token: string;
+      url: string;
+      iceServers?: { urls: string[]; username: string; credential: string }[];
+    } = { token: await at.toJwt(), url: livekitUrl.value() };
+
+    // Attach the TURN relay only when configured (and its secret is set).
+    const turn = turnUrl.value().trim();
+    if (turn) {
+      response.iceServers = [turnCredentials(turn, turnSecret.value())];
+    }
+    return response;
   }
 );

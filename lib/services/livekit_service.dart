@@ -47,6 +47,13 @@ class LiveKitService {
     final data = Map<String, dynamic>.from(result.data as Map);
     final token = data['token'] as String;
     final url = data['url'] as String;
+    // Optional TURN relay advertised by the backend (coturn over TLS/443) for
+    // clients whose network throttles the direct media path to the SFU — the
+    // callee on such a network otherwise can't bring media up in time and the
+    // call drops right after answer. The server sends short-lived credentials;
+    // we hand them to the peer connection. `iceTransportPolicy` stays default
+    // ('all'), so healthy clients still go direct and only fall back to relay.
+    final iceServers = _parseIceServers(data['iceServers']);
 
     _cameraPosition = CameraPosition.front;
     final room = Room(
@@ -95,9 +102,40 @@ class LiveKitService {
         _disconnected.add(null);
       });
 
-    await room.connect(url, token);
+    await room.connect(
+      url,
+      token,
+      connectOptions: iceServers.isEmpty
+          ? const ConnectOptions()
+          : ConnectOptions(
+              rtcConfiguration: RTCConfiguration(iceServers: iceServers),
+            ),
+    );
     _room = room;
     if (room.remoteParticipants.isNotEmpty) _peerJoined.add(null);
+  }
+
+  /// Parse the backend's optional `iceServers` payload into LiveKit ICE
+  /// servers. Setting these replaces the server-advertised list (the SFU
+  /// advertises none), so a malformed entry is skipped rather than trusted.
+  List<RTCIceServer> _parseIceServers(Object? raw) {
+    if (raw is! List) return const [];
+    final servers = <RTCIceServer>[];
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final m = Map<String, dynamic>.from(entry);
+      final urls = (m['urls'] as List?)
+          ?.map((e) => e.toString())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (urls == null || urls.isEmpty) continue;
+      servers.add(RTCIceServer(
+        urls: urls,
+        username: m['username'] as String?,
+        credential: m['credential'] as String?,
+      ));
+    }
+    return servers;
   }
 
   Future<void> setMicEnabled(bool enabled) async {
