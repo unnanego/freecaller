@@ -18,6 +18,7 @@ class SettingsScreen extends StatelessWidget {
     required this.onSignOut,
     required this.onSaveName,
     required this.onReport,
+    required this.onDeleteAccount,
   });
 
   final UserProfile profile;
@@ -26,6 +27,7 @@ class SettingsScreen extends StatelessWidget {
   final Future<void> Function() onSignOut;
   final Future<void> Function(String name) onSaveName;
   final Future<void> Function(String message) onReport;
+  final Future<void> Function() onDeleteAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -111,6 +113,12 @@ class SettingsScreen extends StatelessWidget {
             labelColor: Mod.accent,
             onTap: () => _confirmSignOut(context, loc),
           ),
+          _row(
+            context,
+            label: loc.deleteAccountRow,
+            labelColor: Mod.accent,
+            onTap: () => _confirmDeleteAccount(context, loc),
+          ),
         ],
       ),
     );
@@ -187,6 +195,40 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
     if (confirmed == true) await onSignOut();
+  }
+
+  /// Two-step confirmation, then permanent deletion. On success the auth state
+  /// flips to signed-out and the app returns to the activation screen; on
+  /// failure we surface a message so the user can retry.
+  Future<void> _confirmDeleteAccount(
+      BuildContext context, AppLocalizations loc) async {
+    // Capture before the await so we don't touch context across the async gap.
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Mod.bg,
+        title: Text(loc.deleteAccountConfirmTitle,
+            style: Mod.h2().copyWith(fontSize: 20)),
+        content: Text(loc.deleteAccountConfirmBody, style: Mod.body(color: Mod.text)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(loc.cancel, style: Mod.button(color: Mod.text)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(loc.deleteAccountConfirm, style: Mod.button(color: Mod.accent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await onDeleteAccount();
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(loc.deleteAccountFailed)));
+    }
   }
 
   Widget _readonlyField(String label, String value) {

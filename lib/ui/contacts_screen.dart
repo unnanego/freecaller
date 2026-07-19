@@ -22,6 +22,7 @@ class ContactsScreen extends StatefulWidget {
 class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObserver {
   bool _loading = true;
   bool _denied = false;
+  bool _needsConsent = false;
   List<DiscoveredContact> _onApp = const [];
 
   @override
@@ -48,12 +49,34 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
     if (await widget.discovery.ensureAccess()) _load();
   }
 
+  /// The user tapped the consent button: record their agreement to upload
+  /// numbers for matching, then request OS contacts access and load.
+  Future<void> _consentAndLoad() async {
+    await widget.discovery.grantUploadConsent();
+    if (!mounted) return;
+    setState(() => _needsConsent = false);
+    await _grantAccess();
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
+    // Nothing is uploaded until the user has explicitly consented — show the
+    // consent screen first (Guideline 5.1.2).
+    if (!await widget.discovery.hasUploadConsent()) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _needsConsent = true;
+        _denied = false;
+        _onApp = const [];
+      });
+      return;
+    }
     final result = await widget.discovery.loadAllowedOnApp();
     if (!mounted) return;
     setState(() {
       _loading = false;
+      _needsConsent = false;
       _denied = result == null;
       _onApp = result ?? const [];
     });
@@ -126,6 +149,7 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
     if (_loading) {
       return const Center(child: CircularProgressIndicator(color: Mod.accent));
     }
+    if (_needsConsent) return _consentCta(loc);
     if (_denied) return _permissionCta(loc);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -155,6 +179,35 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
                 ),
         ),
       ],
+    );
+  }
+
+  /// Explicit consent before any address-book number leaves the device
+  /// (Guideline 5.1.2). Explains that numbers are sent to our server purely to
+  /// find who already uses the app.
+  Widget _consentCta(AppLocalizations loc) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(Mod.s6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.group_add_outlined, color: Mod.neutral500, size: 48),
+            const SizedBox(height: Mod.s4),
+            Text(loc.contactsConsentTitle,
+                textAlign: TextAlign.center, style: Mod.h2().copyWith(fontSize: 20)),
+            const SizedBox(height: Mod.s3),
+            Text(loc.contactsConsentBody,
+                textAlign: TextAlign.center, style: Mod.body()),
+            const SizedBox(height: Mod.s6),
+            _PrimaryButton(
+              label: loc.contactsConsentAgree,
+              icon: Icons.check,
+              onTap: _consentAndLoad,
+            ),
+          ],
+        ),
+      ),
     );
   }
 

@@ -47,5 +47,14 @@ class AuthService {
     }
   }
 
+  /// Permanently deletes the signed-in user's account and all their data
+  /// (server-side, via the Admin SDK), then clears the local session. Required
+  /// by App Store Guideline 5.1.1(v). After the backend removes the Auth user,
+  /// `signOut()` drops the now-invalid local token and returns to activation.
+  Future<void> deleteAccount() async {
+    await _functions.httpsCallable('deleteAccount').call();
+    await _auth.signOut();
+  }
+
   Future<void> signOut() => _auth.signOut();
 }

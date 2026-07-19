@@ -78,7 +78,7 @@ Based on the current code. VERIFY the contacts item against your backend before 
 |---|---|---|---|---|
 | Name (display name) | Yes | Yes | App Functionality | You choose a display name |
 | Phone number | Yes | Yes | App Functionality | Used to link invited contacts |
-| Contacts | Yes | Yes | App Functionality | Address-book phone numbers ARE sent to the server (plaintext E.164, up to 2000) to find which family already use the app. Per `functions/src/contacts.ts` they are matched and returned, NOT stored server-side. Declare "Contacts" collected for App Functionality; not used for tracking. |
+| Contacts | Yes | Yes | App Functionality | Address-book phone numbers ARE sent to the server (plaintext E.164, up to 2000) to find which family already use the app. Per `functions/src/contacts.ts` they are matched and returned, NOT stored server-side. Nothing is uploaded until the user accepts an explicit in-app consent screen (Guideline 5.1.2 fix); `NSContactsUsageDescription` also states the upload. Declare "Contacts" collected for App Functionality; not used for tracking. |
 | Device ID | Yes | Yes | App Functionality | Per-install device id for push/call routing |
 | Push token | Yes | Yes | App Functionality | Firebase Cloud Messaging for incoming calls |
 | Audio/Video (call content) | **No** | — | — | Streamed live via LiveKit, not recorded or stored |
@@ -86,3 +86,32 @@ Based on the current code. VERIFY the contacts item against your backend before 
 
 - Used for tracking: **No**
 - Data used to track you across apps/websites: **No**
+
+---
+
+## App Review notes (paste into App Review Information → Notes)
+
+Give the reviewer a working login code (the app is invite/login-code gated) plus the two flows Apple asked about. Suggested text:
+
+```
+Sign-in: this is a private, invite-only family calling app. Use login code
+<REVIEW_CODE> on the sign-in screen (reusable, works on any device). A VPN can
+briefly slow the database on first launch — if you see a spinner, tap Retry.
+
+Contacts (Guideline 5.1.2): the app never uploads anything from the address
+book until you tap "Allow and find" on the Contacts tab. That consent screen
+explains that phone numbers are sent to our server only to find which of your
+contacts already use the app; numbers are matched and not stored. See our
+Privacy Policy → "Contacts".
+
+Account deletion (Guideline 5.1.1(v)): Settings → "Delete account" → confirm.
+This permanently deletes the profile, contacts, login code, and call history
+and removes the account entirely (no email or support step required). A screen
+recording of this flow is attached.
+```
+
+Checklist before resubmitting:
+- Deploy the delete function: `firebase deploy --only functions:deleteAccount`.
+- Re-host `docs/privacy.html` (updated 19 Jul 2026: contacts-upload wording + in-app deletion) at the Privacy Policy URL.
+- Record the account-deletion flow on a physical device and attach it in App Review notes.
+- If the reviewer deletes the demo account, it's gone — hand them a dedicated code and be ready to re-mint via `functions/scripts/createReviewAccount.js`.

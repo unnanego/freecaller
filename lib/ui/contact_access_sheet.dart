@@ -19,6 +19,7 @@ class ContactAccessSheet extends StatefulWidget {
 
 class _ContactAccessSheetState extends State<ContactAccessSheet> {
   bool _loading = true;
+  bool _needsConsent = false;
   List<DiscoveredContact> _all = const [];
   Set<String> _blocked = {};
 
@@ -29,6 +30,16 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
   }
 
   Future<void> _load() async {
+    // Never read/upload the address book before the user has consented
+    // (Guideline 5.1.2) — show the consent prompt instead.
+    if (!await widget.discovery.hasUploadConsent()) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _needsConsent = true;
+      });
+      return;
+    }
     var all = await widget.discovery.loadDeviceContacts();
     if (all == null) {
       // Opened without access — prompt (or route to Settings), then retry.
@@ -39,9 +50,20 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
     if (!mounted) return;
     setState(() {
       _loading = false;
+      _needsConsent = false;
       _all = all ?? const [];
       _blocked = blocked;
     });
+  }
+
+  Future<void> _consentAndLoad() async {
+    await widget.discovery.grantUploadConsent();
+    if (!mounted) return;
+    setState(() {
+      _needsConsent = false;
+      _loading = true;
+    });
+    await _load();
   }
 
   void _toggle(DiscoveredContact c) {
@@ -88,19 +110,54 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator(color: Mod.accent))
-                  : ListView.builder(
-                      padding: EdgeInsets.zero,
-                      itemCount: _all.length,
-                      itemBuilder: (_, i) => _AccessRow(
-                        contact: _all[i],
-                        allowed: !_blocked.contains(_all[i].deviceId),
-                        onToggle: () => _toggle(_all[i]),
-                      ),
-                    ),
+                  : _needsConsent
+                      ? _consentBody(loc)
+                      : ListView.builder(
+                          padding: EdgeInsets.zero,
+                          itemCount: _all.length,
+                          itemBuilder: (_, i) => _AccessRow(
+                            contact: _all[i],
+                            allowed: !_blocked.contains(_all[i].deviceId),
+                            onToggle: () => _toggle(_all[i]),
+                          ),
+                        ),
             ),
-            _doneButton(loc, allowedCount),
+            if (!_needsConsent) _doneButton(loc, allowedCount),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Consent gate shown inside the sheet when the user hasn't yet agreed to
+  /// upload their contacts' numbers (Guideline 5.1.2).
+  Widget _consentBody(AppLocalizations loc) {
+    return Padding(
+      padding: const EdgeInsets.all(Mod.s6),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.group_add_outlined, color: Mod.neutral500, size: 44),
+          const SizedBox(height: Mod.s4),
+          Text(loc.contactsConsentBody,
+              textAlign: TextAlign.center, style: Mod.body()),
+          const SizedBox(height: Mod.s6),
+          Semantics(
+            button: true,
+            label: loc.contactsConsentAgree,
+            child: InkWell(
+              onTap: _consentAndLoad,
+              child: Container(
+                color: Mod.accent,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: Mod.s6, vertical: 16),
+                child: ExcludeSemantics(
+                  child: Text(loc.contactsConsentAgree, style: Mod.button()),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

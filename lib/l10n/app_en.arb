@@ -181,5 +181,13 @@
   },
   "signOutConfirmTitle": "Sign out?",
   "signOutConfirmBody": "To sign back in you'll need your login code. Save it first (Settings → Your login code).",
+  "contactsConsentTitle": "Find family on Zvonilka",
+  "contactsConsentBody": "To show which of your contacts already use Zvonilka, the app will send the phone numbers from your address book to our server to match them. Numbers are used only for matching and are not stored.",
+  "contactsConsentAgree": "Allow and find",
+  "deleteAccountRow": "Delete account",
+  "deleteAccountConfirmTitle": "Delete account?",
+  "deleteAccountConfirmBody": "Your profile, contacts, login code and call history will be permanently deleted. This can't be undone.",
+  "deleteAccountConfirm": "Delete",
+  "deleteAccountFailed": "Couldn't delete your account. Please try again.",
   "cancel": "Cancel"
 }

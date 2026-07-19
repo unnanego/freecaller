@@ -65,6 +65,24 @@ class ContactDiscoveryRepo {
   // allowed (like WhatsApp) without us having to enumerate everyone up front.
   static const _blockedKey = 'contactAccessBlocked';
 
+  // Whether the user has explicitly agreed to send their address-book numbers
+  // to our server for matching. Discovery uploads NOTHING until this is set —
+  // required by App Store Guideline 5.1.2 (inform + consent before uploading
+  // Contacts). The OS contacts permission alone is not this consent.
+  static const _uploadConsentKey = 'contactUploadConsent';
+
+  /// Has the user agreed to upload their contacts' numbers for matching?
+  Future<bool> hasUploadConsent() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_uploadConsentKey) ?? false;
+  }
+
+  /// Record the user's explicit agreement to upload numbers for matching.
+  Future<void> grantUploadConsent() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_uploadConsentKey, true);
+  }
+
   /// Current access, without prompting. iOS "limited" access (partial contact
   /// selection) counts as granted. Uses flutter_contacts' own permission API
   /// (drives CNContactStore directly) rather than permission_handler, whose
@@ -100,8 +118,11 @@ class ContactDiscoveryRepo {
   }
 
   /// Reads the device address book and annotates each contact with on-app
-  /// status. Returns null if contacts permission isn't granted.
+  /// status. Returns null if the user hasn't consented to uploading numbers or
+  /// contacts permission isn't granted — in either case nothing is read or
+  /// sent to the server (Guideline 5.1.2: no upload before consent).
   Future<List<DiscoveredContact>?> loadDeviceContacts() async {
+    if (!await hasUploadConsent()) return null;
     if (!await hasPermission()) return null;
 
     final deviceContacts = await fc.FlutterContacts.getAll(

@@ -21,6 +21,7 @@ class MainShell extends StatefulWidget {
     required this.onSignOut,
     required this.onSaveName,
     required this.onReport,
+    required this.onDeleteAccount,
   });
 
   final UserProfile profile;
@@ -32,6 +33,7 @@ class MainShell extends StatefulWidget {
   final Future<void> Function() onSignOut;
   final Future<void> Function(String name) onSaveName;
   final Future<void> Function(String message) onReport;
+  final Future<void> Function() onDeleteAccount;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -61,6 +63,7 @@ class _MainShellState extends State<MainShell> {
             onSignOut: widget.onSignOut,
             onSaveName: widget.onSaveName,
             onReport: widget.onReport,
+            onDeleteAccount: widget.onDeleteAccount,
           ),
         ],
       ),

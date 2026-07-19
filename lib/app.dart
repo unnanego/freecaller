@@ -269,6 +269,16 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     await _s.auth.signOut();
   }
 
+  /// Permanently delete the account (Guideline 5.1.1(v)). Unregister this
+  /// device's push token first (also cancels the rotation listeners), then the
+  /// backend wipes all remaining data and the Auth user; the auth-state stream
+  /// then returns the app to the activation screen. Rethrows so Settings can
+  /// show a retry message on failure.
+  Future<void> _deleteAccount() async {
+    await _s.pushRegistrar.unregister();
+    await _s.auth.deleteAccount();
+  }
+
   void _onEngineChanged() {
     if (!mounted) return;
     setState(() {});
@@ -348,6 +358,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       onSignOut: _signOut,
       onSaveName: (name) => _s.users.updateDisplayName(profile.uid, name),
       onReport: (message) => _s.users.submitSafetyReport(profile.uid, message),
+      onDeleteAccount: _deleteAccount,
     );
   }
 }

@@ -33,7 +33,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Камера нужна для видеозвонков</string>
 	<key>NSContactsUsageDescription</key>
-	<string>Контакты нужны, чтобы найти близких, которые уже пользуются приложением</string>
+	<string>Номера из ваших контактов отправляются на наш сервер, чтобы найти близких, которые уже пользуются приложением. Номера используются только для поиска и не сохраняются.</string>
 	<key>NSSiriUsageDescription</key>
 	<string>Siri нужен, чтобы звонить близким голосом</string>
 	<key>UIBackgroundModes</key>
