@@ -45,7 +45,7 @@ Functions: `firebase-admin`, `firebase-functions`, `livekit-server-sdk`, `jose` 
 │   │   ├── call_ui/                   # abstract CallUi + callkit impl (web impl = stage 2)
 │   │   └── intents/                   # abstract IntentsBridge + iOS MethodChannel impl + noop
 │   ├── ui/                            # activation, home (giant buttons), in_call, missed banner
-│   └── l10n/                          # app_ru.arb (primary), app_en.arb
+│   └── l10n/                          # app_ru.arb (Russian-only app)
 ├── ios/Runner/AppDelegate.swift       # PushKit + synchronous CallKit report + audio bridge + Siri activity
 ├── ios/SiriIntents/                   # Intents extension: INStartCallIntentHandling, App Group contact store
 ├── android/.../AndroidManifest.xml    # call permissions, FGS phoneCall, singleInstance; res/xml/shortcuts.xml

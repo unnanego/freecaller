@@ -5,6 +5,7 @@
   "activationSubmit": "Активировать",
   "activationInvalid": "Неверный или использованный код",
   "activationNetworkError": "Нет связи. Попробуйте ещё раз",
+  "activationUnknownAccount": "Нет аккаунта с такой почтой. Попросите близких пригласить вас",
   "activationEmailPrompt": "Введите вашу почту",
   "activationEmailHint": "например, name@mail.ru",
   "activationEmailSubmit": "Прислать код",
@@ -175,6 +176,7 @@
       "email": { "type": "String" }
     }
   },
+  "inviteExists": "У этого номера или почты уже есть аккаунт",
   "inviteSentNoEmail": "Аккаунт создан, но письмо не отправилось. Скажите им войти с почтой {email}",
   "@inviteSentNoEmail": {
     "placeholders": {

@@ -5,9 +5,17 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<string>ru</string>
+	<!-- Matches the App Store Connect name exactly. «Звонилка» was taken on
+	     the store, and a device name that shares nothing with the listed name
+	     invites a 2.3.8 "names should be similar" rejection. What Siri accepts
+	     in Russian is handled by INAlternativeAppNames below instead, so the
+	     icon label costs us nothing.
+	     (The incoming-call screen says «Звонилка» regardless — that name is
+	     the CallKit provider's, set in call_ui_callkit.dart.) -->
 	<key>CFBundleDisplayName</key>
 	<string>Freecaller</string>
+
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -46,6 +54,18 @@
 	<array>
 		<string>INStartCallIntent</string>
 	</array>
+	<!-- What «Позвони Аиде через Звонилку» resolves to. Siri matches an app by
+	     its display name, which is Latin here to match the App Store listing,
+	     so the Russian forms it should answer to are declared here: nominative,
+	     the accusative «Звонилку» that «через Звонилку» actually uses, and the
+	     prepositional «Звонилке» for «позвони в Звонилке».
+
+	     iOS allows at most THREE of these: a fourth fails installation outright
+	     with TooManyAlternativeAppNames.
+
+	     NOT to be confused with AppIntentVocabulary.plist: adding one of those
+	     with IntentName INStartCall hard-rejects the upload (error 90624).
+	     INAlternativeAppNames is a plain Info.plist key and is fine. -->
 	<key>INAlternativeAppNames</key>
 	<array>
 		<dict>
@@ -54,7 +74,11 @@
 		</dict>
 		<dict>
 			<key>INAlternativeAppName</key>
-			<string>Звонок</string>
+			<string>Звонилку</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Звонилке</string>
 		</dict>
 	</array>
 	<key>UIApplicationSceneManifest</key>

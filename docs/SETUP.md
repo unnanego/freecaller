@@ -80,8 +80,11 @@ Open `ios/Runner.xcworkspace`:
    generated sources/plist with the files already in `ios/SiriIntents/`
    (IntentHandler.swift, ContactsStore.swift, Info.plist), and attach
    `SiriIntents.entitlements` (App Groups capability on the extension too).
-3. Make sure `ru.lproj/` and `en.lproj/` `InfoPlist.strings` are added to
-   the Runner target (Localizations: add Russian in project settings).
+3. Nothing to do for localization: the app is Russian-only, so the display
+   name and permission strings live directly in `ios/Runner/Info.plist` with
+   `CFBundleDevelopmentRegion = ru`. (There were `ru.lproj`/`en.lproj`
+   `InfoPlist.strings` files here. They were never added to the Runner target,
+   so they never reached the bundle and the app shipped as "Freecaller".)
 4. Minimum iOS: the calling stack targets iOS 15+; the "default calling
    app" feature needs iOS 18.2+ on her phone.
 
