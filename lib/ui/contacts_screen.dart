@@ -275,11 +275,19 @@ class _InviteSheetState extends State<_InviteSheet> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop();
-      // The invite succeeded either way; say which of the two happened, since
-      // "we told them" and "you need to tell them" are different next steps.
+      // The account exists by now either way; the two messages differ in
+      // whether the invitee was told, or the inviter has to tell them.
       messenger.showSnackBar(SnackBar(
         content: Text(emailed ? loc.inviteSent(email) : loc.inviteSentNoEmail(email)),
       ));
+    } on InviteExistsException {
+      // Stay on the sheet: the fix is to change a field, not to retry.
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _error = loc.inviteExists;
+        });
+      }
     } catch (_) {
       if (mounted) {
         setState(() {

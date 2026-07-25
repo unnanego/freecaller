@@ -7,7 +7,8 @@
 //     -> {"matches": [{"uid": …, "displayName": …, "phone": "+7…"}, …]}
 //
 //   POST /api/freecaller/invite  {"name": …, "phone": "+7…", "email": …}
-//     -> {"uid": …, "email": …}
+//     -> {"uid": …, "email": …, "emailed": true|false}   409 if either the
+//        phone or the address already belongs to an account
 //
 // Both need to read or write records the caller has no rule-level access to
 // (the whole roster; another user's contacts), which is exactly what a hook is
@@ -158,26 +159,36 @@ routerAdd(
       }
     }
 
-    if (invitee && invitee.id === auth.id) {
-      return e.json(400, { message: "That's your own account" })
+    // Somebody already has this number or this address. Refuse, rather than
+    // quietly linking to their account: the invitation would have to go to the
+    // address on that account, not the one just typed, and reporting either the
+    // address or even "it went elsewhere" turns this endpoint into "type a
+    // phone number, learn whose email it is".
+    //
+    // The message names nothing. Which of the two fields matched, and what the
+    // account is, stay on the server.
+    if (invitee) {
+      console.log(
+        "invite: refused, " + (invitee.id === auth.id ? "self" : invitee.get("email")) +
+          " already holds phone " + phone + " / typed address " + email,
+      )
+      return e.json(409, { message: "Такой аккаунт уже есть" })
     }
 
-    if (!invitee) {
-      // Accounts are never self-registered (createRule is null); provisioning
-      // one is precisely the privilege this hook exists to lend the inviter.
-      const collection = $app.findCollectionByNameOrId("users")
-      invitee = new Record(collection)
-      invitee.set("email", email)
-      invitee.set("displayName", name)
-      invitee.set("phone", phone)
-      invitee.set("contacts", [])
-      invitee.set("verified", true)
-      // Password auth is disabled collection-wide; an auth record still needs a
-      // hash, so give it one nobody will ever hold. Sign-in is email OTP.
-      invitee.setPassword($security.randomString(40))
-      $app.save(invitee)
-      console.log("invite: provisioned " + email + " (" + invitee.id + ")")
-    }
+    // Accounts are never self-registered (createRule is null); provisioning one
+    // is precisely the privilege this hook exists to lend the inviter.
+    const collection = $app.findCollectionByNameOrId("users")
+    invitee = new Record(collection)
+    invitee.set("email", email)
+    invitee.set("displayName", name)
+    invitee.set("phone", phone)
+    invitee.set("contacts", [])
+    invitee.set("verified", true)
+    // Password auth is disabled collection-wide; an auth record still needs a
+    // hash, so give it one nobody will ever hold. Sign-in is email OTP.
+    invitee.setPassword($security.randomString(40))
+    $app.save(invitee)
+    console.log("invite: provisioned " + email + " (" + invitee.id + ")")
 
     // Link both directions. Hook writes go through $app, which bypasses the API
     // rules — so this does what the old Cloud Function's arrayUnion did without

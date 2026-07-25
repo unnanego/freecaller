@@ -7,6 +7,11 @@ import '../core/config.dart';
 import '../core/log.dart';
 import 'models.dart';
 
+/// That phone number or email address is already on the roster.
+class InviteExistsException implements Exception {
+  const InviteExistsException();
+}
+
 /// One entry from the device address book, annotated with whether the person
 /// is a registered Freecaller user.
 class DiscoveredContact {
@@ -95,17 +100,26 @@ class ContactDiscoveryRepo {
   /// reuses one that already exists), links the two of you as mutual contacts,
   /// and emails them which address to sign in with.
   ///
-  /// Returns whether that email went out. The invite itself has already
-  /// succeeded either way — the account exists and the roster is linked — so a
-  /// mail failure is something to tell the inviter about, not to fail on: they
-  /// can pass the address along themselves.
+  /// Throws [InviteExistsException] when that number or address already
+  /// belongs to someone. A person is one account, and quietly linking to the
+  /// existing one would mean mailing the invitation to an address the inviter
+  /// never typed — which cannot be explained without disclosing it.
+  ///
+  /// Returns whether the invitation email went out. By then the invite has
+  /// already succeeded, so a send failure is reported rather than thrown: the
+  /// inviter can pass the address along themselves.
   Future<bool> invite(String name, String phone, String email) async {
-    final result = await _pb.send<Map<String, dynamic>>(
-      Config.pbInvitePath,
-      method: 'POST',
-      body: {'name': name, 'phone': phone, 'email': email},
-    );
-    return result['emailed'] == true;
+    try {
+      final result = await _pb.send<Map<String, dynamic>>(
+        Config.pbInvitePath,
+        method: 'POST',
+        body: {'name': name, 'phone': phone, 'email': email},
+      );
+      return result['emailed'] == true;
+    } on ClientException catch (e) {
+      if (e.statusCode == 409) throw const InviteExistsException();
+      rethrow;
+    }
   }
 
   /// Requests contacts access. If the OS won't prompt again (already decided),

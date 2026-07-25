@@ -368,14 +368,25 @@ else
   FAILED=$((FAILED+1))
 fi
 
-# Inviting the same person again must link, never duplicate the account.
-R=$(req POST /api/freecaller/invite "$A_TOK" \
-  "{\"name\":\"Invitee\",\"phone\":\"+79990002222\",\"email\":\"$INVITE_EMAIL\"}")
-check 200 "$(code "$R")" "inviting the same person twice is idempotent"
-if [ "$(body "$R" | jqp 'd["uid"]')" = "$INVITEE" ]; then
-  printf '  \033[32mPASS\033[0m    -> reused the existing account\n'
+# Inviting the same person again is refused rather than quietly linked: the
+# invitation would have to go to the address on the existing account, and
+# explaining that to the inviter would disclose it.
+check 409 "$(code "$(req POST /api/freecaller/invite "$A_TOK" \
+  "{\"name\":\"Invitee\",\"phone\":\"+79990002222\",\"email\":\"$INVITE_EMAIL\"}")")" \
+  "inviting the same person twice is refused"
+
+# Same phone, different address — the collision that produced the bug: it must
+# be refused too, and must not create a second account for one person.
+check 409 "$(code "$(req POST /api/freecaller/invite "$A_TOK" \
+  "{\"name\":\"Invitee\",\"phone\":\"+79990002222\",\"email\":\"someone-else-$$@example.invalid\"}")")" \
+  "a known phone under a NEW address is refused"
+
+ROSTER_HITS=$(body "$(req GET "/api/collections/users/records?filter=phone%3D%27%2B79990002222%27" "$SU_TOKEN")" \
+  | jqp 'len(d["items"])')
+if [ "$ROSTER_HITS" = "1" ]; then
+  printf '  \033[32mPASS\033[0m    -> still exactly one account holds that number\n'
 else
-  printf '  \033[31mFAIL\033[0m    -> created a SECOND account for the same person\n'
+  printf '  \033[31mFAIL\033[0m    -> %s accounts hold that number\n' "$ROSTER_HITS"
   FAILED=$((FAILED+1))
 fi
 
