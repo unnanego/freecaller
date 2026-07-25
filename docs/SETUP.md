@@ -6,21 +6,39 @@ change consistently in `ios/Runner/AppDelegate.swift`,
 `ios/SiriIntents/ContactsStore.swift`, entitlements files,
 `android/app/build.gradle.kts`, and `res/xml/shortcuts.xml` if needed.
 
-## 1. Firebase
+## 1. PocketBase (the backend)
 
-1. Create a Firebase project, upgrade to the **Blaze** plan (required for
-   Cloud Functions; actual usage at family scale rounds to $0).
-2. Enable **Firestore** and **Authentication** (no providers needed — we
-   sign in with custom tokens only).
-3. `npm i -g firebase-tools && firebase login && firebase use --add`
-   (writes `.firebaserc`).
-4. `dart pub global activate flutterfire_cli && flutterfire configure` —
-   registers the iOS + Android apps and overwrites the placeholder
-   `lib/firebase_options.dart`. This also downloads
-   `android/app/google-services.json` and
-   `ios/Runner/GoogleService-Info.plist`.
-5. Deploy rules + functions:
-   `firebase deploy --only firestore:rules,functions`.
+Auth, the roster, call signaling, room tokens and push fan-out all live in
+one self-hosted PocketBase. Full recipe — binary, systemd unit, schema
+migrations, hooks, the APNs/FCM senders and `verify.sh` — in
+[`deploy/pocketbase/`](../deploy/pocketbase/).
+
+Two things that are easy to miss:
+
+- **SMTP.** Sign-in is a one-time code sent by email and nothing else, so a
+  mail transport that doesn't work is a total outage — and it fails silently
+  (`request-otp` answers 200 either way, so as not to leak who has an
+  account). Create a no-reply mailbox at your mail host, then run
+  [`deploy/pocketbase/configure-mail.sh`](../deploy/pocketbase/configure-mail.sh)
+  on the server: it sets the SMTP credentials, the sender identity and the
+  Russian OTP email template, and ends by sending a real test message.
+  Send from the host that owns the domain's MX/SPF or the codes land in spam.
+- **A public URL.** PocketBase binds to loopback; put it behind a TLS reverse
+  proxy (Caddy on the same box already fronts LiveKit). `Config.pbUrl`
+  defaults to the production host, so nothing is needed at build time unless
+  you point elsewhere: `--dart-define=PB_URL=http://127.0.0.1:8090`.
+
+## 1b. Firebase (FCM only)
+
+Google is still how an Android phone gets woken for a call, and nothing
+else. Create a Firebase project, then
+`dart pub global activate flutterfire_cli && flutterfire configure` — it
+registers the iOS + Android apps, writes `lib/firebase_options.dart` and
+downloads `android/app/google-services.json` and
+`ios/Runner/GoogleService-Info.plist`. Put the project's service-account
+JSON on the PocketBase host for `push.py` (see
+`deploy/pocketbase/push/push.json.example`). iOS never touches FCM — it is
+woken by PushKit.
 
 ## 2. LiveKit (self-hosted media server)
 
@@ -28,13 +46,11 @@ The media/SFU + TURN server runs on your own VPS. Full recipe (Docker
 Compose, domain, firewall) in [`deploy/livekit/README.md`](../deploy/livekit/README.md).
 In short: stand up the server, generate an API key/secret, then:
 
-```bash
-firebase functions:secrets:set LIVEKIT_API_KEY
-firebase functions:secrets:set LIVEKIT_API_SECRET
-echo 'LIVEKIT_URL=wss://livekit.YOURDOMAIN.com' >> functions/.env
-```
+Put the key, secret and URL in `/etc/freecaller/livekit.json` on the
+PocketBase host (template: `deploy/pocketbase/livekit/livekit.json.example`);
+`livekit_token.py` mints the per-participant room tokens from there.
 
-No app code changes — `livekit_client` and `mintLiveKitToken` talk to any
+No app code changes — `livekit_client` and the token endpoint talk to any
 LiveKit server. (LiveKit Cloud's managed free tier is a drop-in alternative
 if you ever want it: same three values, `wss://<project>.livekit.cloud`.)
 
@@ -42,13 +58,12 @@ if you ever want it: same three values, `wss://<project>.livekit.cloud`.)
 
 1. Apple Developer portal → Keys → new key with **Apple Push Notifications
    service** enabled → download the `.p8`.
-2. Function config:
-   - secret: `firebase functions:secrets:set APNS_AUTH_KEY` (paste the .p8
-     PEM contents)
-   - params in `functions/.env`: `APNS_KEY_ID`, `APNS_TEAM_ID`,
-     `APNS_BUNDLE_ID=com.unnanego.freecaller`, `APNS_ENV=sandbox`
-     (**switch to `production` for TestFlight/App Store builds** — sandbox
-     vs production mismatch silently drops pushes).
+2. Put the `.p8` on the PocketBase host and point
+   `/etc/freecaller/push.json` at it (`apns.key_id`, `apns.team_id`,
+   `apns.bundle_id`, `apns.env`). Template:
+   `deploy/pocketbase/push/push.json.example`. **Switch `apns.env` to
+   `production` for TestFlight/App Store builds** — a sandbox/production
+   mismatch silently drops pushes.
 
 ## 4. Xcode (one-time project surgery)
 
@@ -80,17 +95,31 @@ Open `ios/Runner.xcworkspace`:
 
 ## 6. Provision the family
 
+Accounts are never self-registered, so an admin provisions them. PocketBase
+listens on loopback, so tunnel to it first:
+
 ```bash
-cd tools && npm install
-export GOOGLE_APPLICATION_CREDENTIALS=~/keys/freecaller-admin.json  # service account
-npx tsx admin.ts add-user "Аида" +79150000001      # prints uid + activation code
-npx tsx admin.ts add-user "Павел" +79150000002
-npx tsx admin.ts link <uidAida> <uidPavel>          # mutual contacts
-npx tsx admin.ts code <uid>                         # fresh code if one expired
+ssh -N -L 8090:127.0.0.1:8090 root@<server>          # in another terminal
+export PB_SUPERUSER_EMAIL=… PB_SUPERUSER_PASSWORD=…
+
+# One person at a time…
+node tools/admin.mjs add-user "Аида" +79150000001 aida@example.com
+node tools/admin.mjs link aida@example.com pavel@example.com   # mutual contacts
+
+# …or the whole roster from a file (idempotent — re-run it when someone joins).
+cp deploy/pocketbase/roster.example.json deploy/pocketbase/roster.json  # then edit
+node tools/admin.mjs apply deploy/pocketbase/roster.json
+node tools/admin.mjs list
 ```
 
-On each phone: install the app, type the 6-digit code, done. Sign-in
-persists for the life of the install.
+The email address is the credential — it must be a mailbox that person (or
+whoever sets up their phone) can actually open. (App Store review accounts are
+the exception: their codes are pinned to constants server-side, so nobody has
+to open those inboxes — see the runbook.)
+
+On each phone: install the app, type the email, read the 8-digit code out of
+that mailbox, done. Sign-in persists for the life of the install (the app
+re-issues the token on every launch).
 
 Then make **one supervised test call** in each direction: the OS asks for
 microphone + camera permission on the first call — the helper should be

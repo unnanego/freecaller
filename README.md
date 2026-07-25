@@ -14,15 +14,16 @@ corner feed to swap which video is full screen).
   Android; incoming calls work from a locked, terminated phone.
 - **Accessible by design**: the home screen is 1–4 giant contact buttons,
   full VoiceOver/TalkBack semantics, everything in Russian.
-- **Zero-friction auth**: no SMS, no passwords — a one-time activation
-  code provisioned by the family admin.
+- **Zero-friction auth**: no SMS, no passwords — the family admin
+  provisions the account, and a one-time code is emailed at sign-in.
 
 ## Stack
 
 Flutter + self-hosted LiveKit (open-source WebRTC SFU + TURN, media) +
-Firebase (Firestore signaling, Cloud Functions for LiveKit tokens & call
-pushes, custom-token auth) + `flutter_callkit_incoming`. APNs VoIP push
-(PushKit) on iOS, FCM high-priority data on Android. All your own infra.
+self-hosted PocketBase (auth, roster, call signaling, room tokens, push
+fan-out) + `flutter_callkit_incoming`. APNs VoIP push (PushKit) on iOS,
+FCM high-priority data on Android — Google's only remaining role, because
+waking an Android phone needs it. All your own infra.
 
 ## Repo map
 
@@ -31,10 +32,10 @@ pushes, custom-token auth) + `flutter_callkit_incoming`. APNs VoIP push
 | `lib/` | Flutter app (services/call_engine.dart is the call state machine) |
 | `ios/Runner/AppDelegate.swift` | PushKit→CallKit synchronous report, WebRTC audio-session bridge, Siri handoff |
 | `ios/SiriIntents/` | SiriKit Intents extension (INStartCallIntent) |
-| `functions/` | Cloud Functions: activation, LiveKit tokens, push dispatch, stale-call sweep |
-| `tools/admin.ts` | Family roster provisioning CLI |
+| `deploy/pocketbase/` | Backend: schema migrations, hooks (call state machine, LiveKit tokens, push fan-out, contacts), APNs/FCM senders |
+| `tools/admin.mjs` | Family roster provisioning CLI |
 | `deploy/livekit/` | Self-hosted LiveKit media server (Docker Compose) |
-| `docs/SETUP.md` | One-time infra setup (Firebase, LiveKit, APNs, Xcode targets) |
+| `docs/SETUP.md` | One-time infra setup (LiveKit, APNs, Xcode targets) |
 | `docs/RUNBOOK.md` | Ops: LiveKit cap, push debugging, roster changes |
 
 ## Stage 2 (planned)

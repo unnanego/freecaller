@@ -11,7 +11,6 @@ are listed at the bottom.
 brew install --cask flutter          # or manage the SDK yourself
 brew install --cask android-commandlinetools
 brew install openjdk@17 cocoapods node libimobiledevice
-npm install -g firebase-tools        # or: brew install firebase-cli
 ```
 - Install **Xcode** from the App Store, then: `sudo xcodebuild -license accept` and `xcodebuild -runFirstLaunch`.
 - Env (add to `~/.zshrc`):
@@ -28,7 +27,6 @@ git clone git@github.com:unnanego/freecaller.git
 cd freecaller
 flutter pub get
 (cd ios && pod install)          # after the first iOS build fetches plugins
-(cd functions && npm install)    # Cloud Functions deps
 ```
 
 ## 3. Restore signing secrets from Drive (gitignored — not in the clone)
@@ -40,7 +38,6 @@ cp "<Drive>/android-signing/freecaller-release.jks"  android/app/freecaller-rele
 Without these, Android release builds fall back to debug signing (Play rejects them).
 
 ## 4. Sign in
-- **Firebase CLI:** `firebase login` (account: artisticjungle@gmail.com; project `freecaller-fef3e`).
 - **Xcode signing:** Xcode → Settings → Accounts → add the Apple ID for team `R9577QC7DM`. Automatic signing then re-provisions on first device build.
 
 ## 5. Verify
@@ -68,18 +65,22 @@ flutter build appbundle --release
 ```
 Bump `version:` in `pubspec.yaml` before each store upload (duplicate build numbers are rejected).
 
-## 7. Backend deploy (Firebase)
+## 7. Backend (PocketBase)
+The backend is not deployed from here — it runs on the server, and updates
+are files copied into place (see `deploy/pocketbase/`):
 ```bash
-cd functions && npm run build && cd ..
-firebase deploy --only firestore:rules --project freecaller-fef3e
-firebase deploy --only functions --project freecaller-fef3e
+scp deploy/pocketbase/pb_hooks/*.pb.js  root@<server>:/var/lib/pocketbase/pb_hooks/
+scp deploy/pocketbase/pb_migrations/*   root@<server>:/var/lib/pocketbase/pb_migrations/
+ssh root@<server> systemctl restart pocketbase     # hooks + migrations load at start
+ssh root@<server> 'cd /var/lib/pocketbase && bash verify.sh'
 ```
-Admin scripts (mint codes, etc.) need the service-account key:
+Roster admin runs locally against a tunnel (PocketBase is loopback-only):
 ```bash
-cd tools
-GOOGLE_APPLICATION_CREDENTIALS="<Drive>/work/Holographica/Freecaller/freecaller-fef3e-firebase-adminsdk-*.json" \
-  npx tsx admin.ts list
+ssh -N -L 8090:127.0.0.1:8090 root@<server>
+PB_SUPERUSER_EMAIL=… PB_SUPERUSER_PASSWORD=… node tools/admin.mjs list
 ```
+The app must be built with the public URL:
+`flutter build ipa --release --dart-define=PB_URL=https://pb.YOURDOMAIN`.
 
 ---
 
@@ -89,8 +90,9 @@ GOOGLE_APPLICATION_CREDENTIALS="<Drive>/work/Holographica/Freecaller/freecaller-
 | Android keystore `freecaller-release.jks` | `android/app/` | `My Drive/dev/Freecaller/android-signing/` |
 | `key.properties` (keystore passwords) | `android/` | `My Drive/dev/Freecaller/android-signing/` |
 | App Store Connect API key `AuthKey_R8JSXTZRG7.p8` | `altool` uploads (`API_PRIVATE_KEYS_DIR`) | `My Drive/dev/Freecaller/` |
-| Firebase service-account `.json` | admin scripts (`GOOGLE_APPLICATION_CREDENTIALS`) | `My Drive/work/Holographica/Freecaller/` |
-| APNs auth key (VoIP push) | already a Firebase secret `APNS_AUTH_KEY` (Secret Manager) | — (re-upload from Apple if ever rotated) |
+| Firebase service-account `.json` | FCM v1 sending from `push.py` | `My Drive/work/Holographica/Freecaller/` → server `/etc/freecaller/` |
+| APNs auth key (VoIP push) | `push.py` on the PocketBase host | server `/etc/freecaller/` (re-upload from Apple if ever rotated) |
+| PocketBase superuser password | `tools/admin.mjs`, the PB dashboard | password manager |
 
 `GoogleService-Info.plist` / `google-services.json` are committed (client config, not sensitive).
 Keep the Drive account on 2FA — it now holds full app-signing ability.

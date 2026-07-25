@@ -1,5 +1,13 @@
 # Freecaller («Звонилка») — Family VoIP Caller App
 
+> **Historical.** This is the original M0 design doc, kept for the reasoning
+> behind the call/push architecture, which still holds. The **backend it
+> describes is gone**: Firestore, Cloud Functions and custom-token auth were
+> replaced by a self-hosted PocketBase (schema, hooks and senders in
+> `deploy/pocketbase/`), and Firebase now does FCM delivery and nothing else.
+> Sign-in is a one-time code emailed by PocketBase, not an activation code.
+> See the README and `docs/SETUP.md` for what is actually running.
+
 ## Context
 
 A dead-simple family calling app for a blind, 73-year-old, Russian-only-speaking mother-in-law with an iPhone. Family (5–15 people, mixed iOS/Android) installs the app; calls are app-to-app VoIP audio, contacts are phone numbers. Primary input is Siri in Russian («Позвони Аиде через Звонилку»); the app UI (giant VoiceOver-friendly buttons) is the fallback. Repo: `/Users/pavelabdurakhimov/Documents/dev/Freecaller` (cloned from github.com/unnanego/freecaller, empty).

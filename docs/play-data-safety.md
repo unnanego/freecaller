@@ -19,7 +19,7 @@ Fill this into Play Console → App content → Data safety.
 | **Device or other IDs** (Device ID) | Yes | No | App functionality (call routing, notifications) | No | Required |
 
 Notes per item:
-- **Name / Phone**: stored in the user's Firestore profile so family can find/call them.
+- **Name / Phone**: stored in the user's profile on our server so family can find/call them.
 - **Contacts**: the app uploads address-book phone numbers to match against registered users, then discards them — mark **"processed ephemerally"** (Play shows this instead of a retention claim).
 - **Device/IDs**: per-install device id + FCM push token, used to ring the right device.
 

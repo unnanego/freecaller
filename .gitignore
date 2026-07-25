@@ -47,8 +47,6 @@ lib/l10n/app_localizations*.dart
 
 # Node (Cloud Functions + admin tools)
 node_modules/
-functions/lib/
-functions/.env
 tools/*.js
 
 # Firebase secrets (never commit). The mobile config files
@@ -65,5 +63,15 @@ deploy/livekit/livekit.yaml
 # the live files live in /etc/freecaller on the server.
 deploy/pocketbase/push/push.json
 deploy/pocketbase/livekit/livekit.json
+# The real roster: family names, phone numbers and sign-in addresses.
+deploy/pocketbase/roster.json
+# Fixed App Store reviewer codes — live copy is /etc/freecaller/review-otp.json
+deploy/pocketbase/review-otp.json
+
+# The retired Firebase backend. Its source is gone from the tree (git history
+# has it), but the local build output, node_modules and — importantly — the
+# .env holding the deployed functions' secrets stay on disk: build 8 is still
+# under App Store review against that backend, so it must remain patchable.
+functions/
 deploy/pocketbase/**/*.p8
 deploy/pocketbase/**/fcm.json
