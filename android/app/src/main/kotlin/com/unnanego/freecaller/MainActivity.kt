@@ -1,6 +1,8 @@
 package com.unnanego.freecaller
 
 import android.content.Context
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
@@ -19,6 +21,9 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "acquire" -> { acquireLocks(); result.success(null) }
                     "release" -> { releaseLocks(); result.success(null) }
+                    "setSpeaker" -> result.success(
+                        setSpeaker(call.argument<Boolean>("on") ?: false),
+                    )
                     else -> result.notImplemented()
                 }
             }
@@ -51,6 +56,54 @@ class MainActivity : FlutterActivity() {
         }
         // 1h safety cap so a missed release can never drain the battery indefinitely.
         wakeLock?.takeIf { !it.isHeld }?.acquire(60 * 60 * 1000L)
+    }
+
+    // Route call audio to the speaker (or back off it), using the platform's
+    // own API rather than the WebRTC plugin's device switcher.
+    //
+    // The plugin drives routing through AudioManager.isSpeakerphoneOn, which is
+    // deprecated since Android 12 and which several OEM builds quietly ignore
+    // once a communication device has been selected — the symptom being a
+    // speaker button that does nothing at all on those phones while working
+    // everywhere else. setCommunicationDevice is the supported replacement and
+    // is what actually moves the audio on them.
+    //
+    // Returns a description of what it did, so a device that refuses can be
+    // told apart from one that was never asked.
+    private fun setSpeaker(on: Boolean): String {
+        val audio = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            @Suppress("DEPRECATION")
+            audio.isSpeakerphoneOn = on
+            return "legacy isSpeakerphoneOn=$on"
+        }
+
+        val devices = audio.availableCommunicationDevices
+
+        // A headset the user plugged in or paired outranks the speaker button:
+        // blasting a call out of the loudspeaker when someone has earphones in
+        // is worse than ignoring the toggle.
+        val external = devices.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+        }
+        if (external != null) {
+            return "left on external device (type=${'$'}{external.type})"
+        }
+
+        if (!on) {
+            audio.clearCommunicationDevice()
+            return "cleared -> platform default (earpiece)"
+        }
+
+        val speaker = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            ?: return "no builtin speaker among ${'$'}{devices.map { it.type }}"
+
+        val applied = audio.setCommunicationDevice(speaker)
+        return "setCommunicationDevice(speaker)=$applied"
     }
 
     private fun releaseLocks() {

@@ -148,6 +148,10 @@ class CallEngine extends ChangeNotifier {
       isVideo: video,
     );
     _lastPeerName = contact.displayName;
+    // Set the call's default route BEFORE the screen (and its speaker button)
+    // appears: connect() now honours whatever the route is at that point, so a
+    // toggle pressed while "Соединение…" is up has to be able to win.
+    _livekit.prepareRoute(video: video);
     _setPhase(EnginePhase.dialing);
 
     try {
@@ -179,15 +183,13 @@ class CallEngine extends ChangeNotifier {
       return;
     }
 
-    // Ringback while we wait for the callee to pick up. It starts on the
-    // earpiece; if the user already turned the speaker on, re-run the exact
-    // toggle path a beat later (once the native session has settled) so the
-    // ringback moves to the speaker just like a mid-ring toggle does.
+    // Ringback while we wait for the callee to pick up. It plays through its
+    // own player, not the room, so it needs the route applied to it separately
+    // — and a beat later, once the native session has settled.
     await _sounds.startRingback();
     if (_livekit.speakerOn.value) {
       Future.delayed(const Duration(milliseconds: 500), () {
         if (_phase == EnginePhase.dialing && _livekit.speakerOn.value) {
-          _livekit.setSpeaker(true);
           _sounds.setSpeaker(true);
         }
       });
@@ -267,6 +269,7 @@ class CallEngine extends ChangeNotifier {
   Future<void> _join(String callId) async {
     // Show the call screen immediately on answer; the LiveKit connect below
     // takes ~1-2s and shouldn't leave the user staring at the ringing UI.
+    _livekit.prepareRoute(video: _session?.isVideo ?? false);
     _setPhase(EnginePhase.inCall);
     await _locks.acquire();
     await _livekit.connect(callId, video: _session?.isVideo ?? false);

@@ -6,14 +6,18 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../core/config.dart';
 import '../core/log.dart';
+import 'call_locks.dart';
 
 /// Wraps a single LiveKit room connection (the app is one-call-at-a-time).
 /// Room name == callId; the server mints a token per participant. Voice
 /// calls default to the earpiece, video calls to the speaker + front camera.
 class LiveKitService {
-  LiveKitService(this._pb);
+  LiveKitService(this._pb, {CallLocks? locks}) : _locks = locks ?? CallLocks();
 
   final PocketBase _pb;
+
+  /// The Android bridge — used here only for its native audio route.
+  final CallLocks _locks;
 
   Room? _room;
   EventsListener<RoomEvent>? _listener;
@@ -33,7 +37,14 @@ class LiveKitService {
   /// Our own camera feed (small self-view for sighted family members).
   final localVideo = ValueNotifier<VideoTrack?>(null);
 
-  /// Current audio route, so the UI toggle reflects reality.
+  /// The audio route we WANT, as last chosen for this call — not necessarily
+  /// what the OS is doing this instant.
+  ///
+  /// Both platforms rebuild the audio session more than once per call (at
+  /// connect, and again when tracks appear), and every rebuild re-decides the
+  /// route from scratch. So the choice is kept here and re-asserted at each of
+  /// those moments; treating the OS as the source of truth is how a toggle
+  /// pressed before the call connects silently disappears.
   final speakerOn = ValueNotifier<bool>(false);
 
   CameraPosition _cameraPosition = CameraPosition.front;
@@ -90,15 +101,25 @@ class LiveKitService {
           // than freezing — keeps a usable low-res feed alive on a throttled link.
           degradationPreference: DegradationPreference.balanced,
         ),
-        defaultAudioOutputOptions: AudioOutputOptions(speakerOn: video),
+        // The user's choice, not the call mode: they may have hit the
+        // speaker button while this was still connecting.
+        defaultAudioOutputOptions: AudioOutputOptions(speakerOn: speakerOn.value),
       ),
     );
-    speakerOn.value = video;
     _listener = room.createListener()
-      ..on<ParticipantConnectedEvent>((_) => _peerJoined.add(null))
+      ..on<ParticipantConnectedEvent>((_) {
+        _peerJoined.add(null);
+        // The peer's audio track is about to arrive and the session gets
+        // reconfigured with it; put the route back afterwards.
+        _reassertRoute();
+      })
       ..on<TrackSubscribedEvent>((event) {
         if (event.track is VideoTrack) {
           remoteVideo.value = event.track as VideoTrack;
+        } else {
+          // Remote audio just arrived, which is exactly when the platform
+          // re-decides the output device.
+          _reassertRoute();
         }
       })
       ..on<TrackUnsubscribedEvent>((event) {
@@ -119,8 +140,52 @@ class LiveKitService {
             ),
     );
     _room = room;
+    // Connecting brings the audio session up and applies its own routing; the
+    // choice above has to be re-asserted on the far side of that. The delayed
+    // repeat is for Android: the device list is populated asynchronously once
+    // the session starts, and a speaker that was not enumerated yet cannot be
+    // selected — some OEM builds only expose it a beat later.
+    await _applyRoute();
+    Future.delayed(const Duration(milliseconds: 800), _reassertRoute);
     if (room.remoteParticipants.isNotEmpty) _peerJoined.add(null);
   }
+
+  /// Push [speakerOn] onto the platform. Safe to call repeatedly — it is meant
+  /// to be, since each call is a correction of whatever the audio session just
+  /// decided on its own.
+  Future<void> _applyRoute() async {
+    if (_room == null) return;
+    try {
+      // First the SDK, so its own device switcher agrees with us and does not
+      // undo the choice on the next device-change event…
+      await Hardware.instance.setSpeakerphoneOn(speakerOn.value);
+      // …then the platform API directly, which is what actually moves the audio
+      // on OEM builds that ignore the SDK's deprecated path.
+      final native = await _locks.setSpeaker(speakerOn.value);
+      final outputs = await Hardware.instance.audioOutputs();
+      log('audio route -> speaker=${speakerOn.value}'
+          '${native == null ? '' : ' | native: $native'}'
+          ' | outputs=[${outputs.map((d) => d.label).join(', ')}]');
+    } catch (e) {
+      log('applying audio route (speaker=${speakerOn.value}) failed', error: e);
+    }
+  }
+
+  /// Re-apply the route after something that may have changed it.
+  ///
+  /// Android only, deliberately. There the output device list is built
+  /// asynchronously once the audio session starts, so an early request can be
+  /// dropped for a device that is not enumerated yet. iOS keeps the preference
+  /// across its own reconfigurations, and re-asserting there just rebuilds the
+  /// audio session for nothing — audible as a click mid-call.
+  void _reassertRoute() {
+    if (defaultTargetPlatform == TargetPlatform.android) _applyRoute();
+  }
+
+  /// The default route for a call of this mode: voice to the earpiece, video to
+  /// the speaker. Called before connecting, so that a toggle pressed while the
+  /// call is still connecting overrides it instead of being overwritten by it.
+  void prepareRoute({required bool video}) => speakerOn.value = video;
 
   /// Parse the backend's optional `iceServers` payload into LiveKit ICE
   /// servers. Setting these replaces the server-advertised list (the SFU
@@ -177,13 +242,13 @@ class LiveKitService {
     }
   }
 
+  /// Record the choice first, then try to apply it. Order matters: before the
+  /// room exists there is no audio session to route, and the request would be
+  /// dropped — but the choice must still stick, so that connect() and every
+  /// re-assert after it use it.
   Future<void> setSpeaker(bool enabled) async {
-    try {
-      await Hardware.instance.setSpeakerphoneOn(enabled);
-      speakerOn.value = enabled;
-    } catch (e) {
-      log('setSpeaker($enabled) failed', error: e);
-    }
+    speakerOn.value = enabled;
+    await _applyRoute();
   }
 
   Future<void> disconnect() async {
