@@ -78,9 +78,15 @@ class _ActivationScreenState extends State<ActivationScreen> {
     });
   }
 
+  /// The two steps are separate widgets with distinct keys on purpose.
+  /// Rendered as the same TextField at the same position, Flutter updates the
+  /// element in place — and a keyboardType change is ignored on a field that
+  /// already holds focus, so the email keyboard would stay up for the code.
+  /// A different key builds a new element and a fresh input connection.
   Widget _field(AppLocalizations loc) {
     if (!_awaitingCode) {
       return TextField(
+        key: const ValueKey('email'),
         controller: _input,
         keyboardType: TextInputType.emailAddress,
         autocorrect: false,
@@ -88,19 +94,33 @@ class _ActivationScreenState extends State<ActivationScreen> {
         textCapitalization: TextCapitalization.none,
         style: const TextStyle(fontSize: 28),
         textAlign: TextAlign.center,
-        decoration: InputDecoration(hintText: loc.activationEmailHint),
+        decoration: InputDecoration(
+          hintText: loc.activationEmailHint,
+          // The hint is a sentence, the input is not: without its own size it
+          // inherits the oversized input style and runs off the field.
+          hintStyle: const TextStyle(fontSize: 18, letterSpacing: 0),
+        ),
       );
     }
     return TextField(
+      key: const ValueKey('code'),
       controller: _input,
-      keyboardType: TextInputType.number,
+      // Straight to the digits-only keypad: the code is 8 digits and the
+      // person typing it is usually reading it aloud off another screen.
+      keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: false),
+      autofocus: true,
       inputFormatters: [
         FilteringTextInputFormatter.digitsOnly,
         LengthLimitingTextInputFormatter(8),
       ],
-      style: const TextStyle(fontSize: 40, letterSpacing: 12),
+      // Sized for 8 digits, not the 6 this started with: at 40/12 the code
+      // overflowed the field on a normal-width phone.
+      style: const TextStyle(fontSize: 34, letterSpacing: 4),
       textAlign: TextAlign.center,
-      decoration: InputDecoration(hintText: loc.activationCodeHint),
+      decoration: InputDecoration(
+        hintText: loc.activationCodeHint,
+        hintStyle: const TextStyle(fontSize: 18, letterSpacing: 0),
+      ),
     );
   }
 
