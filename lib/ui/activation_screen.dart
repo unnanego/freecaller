@@ -56,12 +56,19 @@ class _ActivationScreenState extends State<ActivationScreen> {
         }
       }
     } catch (e) {
-      // Say "invalid code" ONLY when the server explicitly rejected it;
-      // everything else (offline, timeout, unavailable) is a connection problem
-      // and must not be mislabeled as a bad code.
-      final badCredential = widget.auth.isBadCredential(e);
+      // Three different failures, three different things for the user to do:
+      // there is no such account (ask to be invited), the code was rejected
+      // (retype it), or we never reached the server (try again). Everything
+      // that is not an explicit rejection is a connection problem and must not
+      // be mislabeled — that mislabelling was the App Store 2.1 rejection.
       setState(() {
-        _error = badCredential ? loc.activationInvalid : loc.activationNetworkError;
+        if (!_awaitingCode && widget.auth.isUnknownAccount(e)) {
+          _error = loc.activationUnknownAccount;
+        } else if (widget.auth.isBadCredential(e)) {
+          _error = loc.activationInvalid;
+        } else {
+          _error = loc.activationNetworkError;
+        }
       });
     } finally {
       if (mounted) setState(() => _busy = false);

@@ -56,9 +56,11 @@ class AuthService {
   /// Step one: email a one-time code to [email], returning the id that ties the
   /// code to this attempt.
   ///
-  /// PocketBase answers with an otpId even for an address that has no account,
-  /// on purpose — it refuses to leak who is on the roster. A wrong address
-  /// therefore fails at [signInWithCode], when no code ever arrives.
+  /// Throws with a 404 when no account has that address — PocketBase would
+  /// normally hand back a fabricated otpId to avoid confirming who is on the
+  /// roster, which strands anyone with a typo (or a deleted account) on the
+  /// code screen forever. `pb_hooks/signin.pb.js` trades that away deliberately;
+  /// see [isUnknownAccount].
   Future<String> requestCode(String email) async {
     final otp = await _users.requestOTP(email.trim());
     return otp.otpId;
@@ -79,6 +81,13 @@ class AuthService {
   bool isBadCredential(Object error) =>
       error is ClientException &&
       const {400, 401, 404}.contains(error.statusCode);
+
+  /// True when [error] means "no account with that address" — the server says
+  /// so plainly (pb_hooks/signin.pb.js) rather than pretending a code was sent,
+  /// so the screen can tell someone to ask for an invitation instead of leaving
+  /// them waiting for mail that will never arrive.
+  bool isUnknownAccount(Object error) =>
+      error is ClientException && error.statusCode == 404;
 
   /// Re-issues the token so its expiry moves forward — the client half of the
   /// "sessions never expire" design (`pb_migrations/…_infinite_sessions.js`).

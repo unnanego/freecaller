@@ -5,9 +5,8 @@
 # Sign-in is a one-time code sent by email and nothing else, so a broken mail
 # transport is a total outage: nobody can get into the app at all. PocketBase's
 # default mailer shells out to `sendmail`, which does not exist on this box —
-# without the settings below, every request-otp silently sends nothing (the API
-# still answers 200 with an otpId, because it refuses to leak whether an account
-# exists).
+# without the settings below, every request-otp silently sends nothing while
+# still answering 200 with an otpId.
 #
 # BEFORE running: create the mailbox in the REG.RU panel
 # (Почта → Почтовые ящики) for the domain whose MX already points at
@@ -33,6 +32,9 @@ SMTP_HOST="${SMTP_HOST:-mail.hosting.reg.ru}"
 SMTP_PORT="${SMTP_PORT:-465}"          # 465 = implicit TLS; 587 would be STARTTLS (tls:false)
 SMTP_USER="${SMTP_USER:-}"
 SENDER_NAME="${SENDER_NAME:-Звонилка}"
+# Shown in the dashboard and by any {APP_NAME} email template.
+# PocketBase ships as "Acme" until told otherwise.
+APP_NAME="${APP_NAME:-Freecaller}"
 
 # Passwords may also be passed in the environment, for an unattended run.
 SU_PW="${PB_SUPERUSER_PASSWORD:-}"
@@ -73,9 +75,9 @@ if [ -z "$TOKEN" ]; then
 fi
 
 # ---------- SMTP + sender identity -------------------------------------------
-SETTINGS=$(python3 - "$SMTP_HOST" "$SMTP_PORT" "$SMTP_USER" "$SMTP_PW" "$SENDER_NAME" <<'PY'
+SETTINGS=$(python3 - "$SMTP_HOST" "$SMTP_PORT" "$SMTP_USER" "$SMTP_PW" "$SENDER_NAME" "$APP_NAME" <<'PY'
 import json, sys
-host, port, user, password, sender = sys.argv[1:6]
+host, port, user, password, sender, app_name = sys.argv[1:7]
 print(json.dumps({
     "smtp": {
         "enabled": True,
@@ -91,6 +93,7 @@ print(json.dumps({
         "tls": port == "465",
     },
     "meta": {
+        "appName": app_name,
         "senderName": sender,
         # Must be the mailbox itself: REG.RU rejects a From: it does not own.
         "senderAddress": user,
@@ -172,5 +175,6 @@ echo
 echo "Done. A real end-to-end check is worth more than any of the above:"
 echo "  curl -s -X POST $PB/api/collections/users/request-otp \\"
 echo "    -H 'Content-Type: application/json' -d '{\"email\":\"<a real account>\"}'"
-echo "then confirm the code arrives. request-otp answers 200 even for addresses"
-echo "with no account, so only a received email proves anything."
+echo "then confirm the code arrives. A 404 means no account has that address"
+echo "(pb_hooks/signin.pb.js); a 200 only means the send was accepted, so the"
+echo "received email is what actually proves the transport works."
