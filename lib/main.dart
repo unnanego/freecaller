@@ -61,7 +61,7 @@ Future<void> main() async {
   final services = AppServices(
     auth: auth,
     users: UserRepo(firestore),
-    calls: CallRepo(firestore),
+    calls: FirestoreCallRepo(firestore),
     livekit: LiveKitService(functions),
     callUi: callUi,
     intents: Platform.isIOS ? IosIntentsBridge() : NoopIntentsBridge(),

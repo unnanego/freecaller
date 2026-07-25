@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:pocketbase/pocketbase.dart';
 
 class UserProfile {
   const UserProfile({
@@ -71,4 +72,37 @@ class CallDoc {
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }
+
+  /// PocketBase counterpart of [CallDoc.fromDoc]. `createdAt` comes from the
+  /// record's own `created` autodate rather than a field we write.
+  factory CallDoc.fromRecord(RecordModel record) => CallDoc(
+        callId: record.id,
+        callerId: record.get<String>('callerId', ''),
+        calleeId: record.get<String>('calleeId', ''),
+        callerName: record.get<String>('callerName', ''),
+        callerPhone: record.get<String>('callerPhone', ''),
+        isVideo: record.get<bool>('isVideo', false),
+        state: callStateFrom(record.get<String>('state', '')),
+        createdAt: DateTime.tryParse(record.get<String>('created', '')),
+      );
+
+  /// Value equality lets a watch skip re-emitting an unchanged call — needed
+  /// because the PocketBase repo reconciles on a timer and would otherwise
+  /// churn the engine every few seconds.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CallDoc &&
+          other.callId == callId &&
+          other.callerId == callerId &&
+          other.calleeId == calleeId &&
+          other.callerName == callerName &&
+          other.callerPhone == callerPhone &&
+          other.isVideo == isVideo &&
+          other.state == state &&
+          other.createdAt == createdAt;
+
+  @override
+  int get hashCode => Object.hash(callId, callerId, calleeId, callerName,
+      callerPhone, isVideo, state, createdAt);
 }
