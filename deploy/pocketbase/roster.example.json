@@ -1,0 +1,48 @@
+{
+  "_comment": [
+    "Declarative family roster for `node tools/admin.mjs apply <file>`.",
+    "Copy to roster.json (gitignored — it holds real names, numbers and",
+    "addresses) and re-run it whenever someone joins: it is idempotent,",
+    "matching existing accounts by email and only adding what is missing.",
+    "",
+    "email is the CREDENTIAL: sign-in mails an 8-digit code there. It must be a",
+    "mailbox the person (or the family member who sets their phone up) can",
+    "actually open.",
+    "",
+    "linkEveryone makes every listed person a contact of every other, which is",
+    "what a family roster is. The Apple review accounts are excluded from that",
+    "and linked only to each other — a reviewer must not see real people's",
+    "names and numbers.",
+    "",
+    "Three review accounts is deliberate: one is spent proving the",
+    "account-deletion flow (App Store 5.1.1(v)), which destroys it, and the",
+    "other two survive for the actual sign-in walkthrough.",
+    "",
+    "The reviewer never opens these mailboxes: their sign-in codes are pinned",
+    "to constants by pb_hooks/review_otp.pb.js (see review-otp.json.example).",
+    "The addresses still have to be real and unique — PocketBase requires a",
+    "unique email per account — but no mail ever needs to be read from them."
+  ],
+
+  "people": [
+    { "name": "Аида", "phone": "+79150000001", "email": "aida@example.com" },
+    { "name": "Павел", "phone": "+79150000002", "email": "pavel@example.com" },
+
+    { "name": "Apple Review 1", "phone": "+79150000101", "email": "review1@holographica.space" },
+    { "name": "Apple Review 2", "phone": "+79150000102", "email": "review2@holographica.space" },
+    { "name": "Apple Review 3", "phone": "+79150000103", "email": "review3@holographica.space" }
+  ],
+
+  "linkEveryone": true,
+  "excludeFromEveryone": [
+    "review1@holographica.space",
+    "review2@holographica.space",
+    "review3@holographica.space"
+  ],
+
+  "links": [
+    ["review1@holographica.space", "review2@holographica.space"],
+    ["review1@holographica.space", "review3@holographica.space"],
+    ["review2@holographica.space", "review3@holographica.space"]
+  ]
+}

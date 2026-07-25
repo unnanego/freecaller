@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "Fixed sign-in codes for App Store review accounts — read by",
+    "pb_hooks/review_otp.pb.js. Install as /etc/freecaller/review-otp.json,",
+    "root:pocketbase, chmod 640 (the hook runs as the pocketbase user).",
+    "",
+    "Keys are account emails (lowercase), values are the code the reviewer",
+    "types. Use 8 digits: the activation screen's second field is numeric and",
+    "limited to 8 characters, matching the collection's otp.length.",
+    "",
+    "For a listed account the EMAILED code stops working — the fixed one is",
+    "what validates. Anyone not listed here keeps normal single-use random",
+    "codes, so this file is the entire blast radius.",
+    "",
+    "DELETE THE FILE once review is done. No redeploy, no restart: the hook",
+    "reads it per request and does nothing when it is missing.",
+    "",
+    "Codes belong in the App Review notes next to the email, never in git —",
+    "the real file is gitignored."
+  ],
+
+  "review1@holographica.space": "24681357",
+  "review2@holographica.space": "31415926",
+  "review3@holographica.space": "27182818"
+}

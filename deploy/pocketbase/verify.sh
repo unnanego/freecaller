@@ -152,16 +152,30 @@ reject "$(code "$R")" "call history is NOT client-deletable"
 
 # ---------- devices + reports ------------------------------------------------
 section "6. devices and reports"
+A_INSTALL="verify-install-$(cat /proc/sys/kernel/random/uuid)"
 R=$(req POST /api/collections/devices/records "$A_TOK" \
-  "{\"user\":\"$ALICE\",\"platform\":\"ios\",\"voipToken\":\"verify-token\"}")
+  "{\"user\":\"$ALICE\",\"deviceId\":\"$A_INSTALL\",\"platform\":\"ios\",\"voipToken\":\"verify-token\"}")
 check 200 "$(code "$R")" "alice registers her own device"
 A_DEV=$(body "$R" | jqp 'd["id"]')
 
 R=$(req POST /api/collections/devices/records "$A_TOK" \
-  "{\"user\":\"$BOB\",\"platform\":\"ios\",\"voipToken\":\"stolen\"}")
+  "{\"user\":\"$BOB\",\"deviceId\":\"verify-install-stolen\",\"platform\":\"ios\",\"voipToken\":\"stolen\"}")
 reject "$(code "$R")" "alice CANNOT register a device for bob"
 
 reject "$(code "$(req GET "/api/collections/devices/records/$A_DEV" "$B_TOK")")" "bob CANNOT read alice's push token"
+
+# The same physical phone signing into another account: the old registration
+# must go, or it keeps ringing for the account it left (pb_hooks/devices.pb.js).
+R=$(req POST /api/collections/devices/records "$B_TOK" \
+  "{\"user\":\"$BOB\",\"deviceId\":\"$A_INSTALL\",\"platform\":\"ios\",\"voipToken\":\"bob-took-over\"}")
+check 200 "$(code "$R")" "bob re-registers the SAME install"
+B_DEV_TAKEOVER=$(body "$R" | jqp 'd["id"]')
+check 404 "$(code "$(req GET "/api/collections/devices/records/$A_DEV" "$SU_TOKEN")")" \
+  "  -> alice's registration for that install is gone (no phantom ring)"
+req DELETE "/api/collections/devices/records/$B_DEV_TAKEOVER" "$B_TOK" >/dev/null
+R=$(req POST /api/collections/devices/records "$A_TOK" \
+  "{\"user\":\"$ALICE\",\"deviceId\":\"$A_INSTALL\",\"platform\":\"ios\",\"voipToken\":\"verify-token\"}")
+A_DEV=$(body "$R" | jqp 'd["id"]')
 
 R=$(req POST /api/collections/reports/records "$A_TOK" \
   "{\"reporterUid\":\"$ALICE\",\"type\":\"child_safety\",\"message\":\"verify.sh test report\"}")
@@ -176,7 +190,7 @@ section "7. push fan-out (hook -> push.py -> APNs/FCM)"
 # A syntactically valid but nonexistent APNs token: Apple answers
 # 400 BadDeviceToken, which is an unambiguous "this token is dead".
 R=$(req POST /api/collections/devices/records "$B_TOK" \
-  "{\"user\":\"$BOB\",\"platform\":\"ios\",\"voipToken\":\"$(printf '0%.0s' {1..64})\"}")
+  "{\"user\":\"$BOB\",\"deviceId\":\"verify-install-ios-$$\",\"platform\":\"ios\",\"voipToken\":\"$(printf '0%.0s' {1..64})\"}")
 check 200 "$(code "$R")" "bob registers an iOS device"
 B_DEV_IOS=$(body "$R" | jqp 'd["id"]')
 
@@ -210,7 +224,7 @@ check 404 "$(code "$(req GET "/api/collections/devices/records/$B_DEV_IOS" "$SU_
 # so an Android token must NOT be pruned on it — otherwise a bug in our message
 # construction would silently wipe every device in the database.
 R=$(req POST /api/collections/devices/records "$B_TOK" \
-  "{\"user\":\"$BOB\",\"platform\":\"android\",\"fcmToken\":\"bogus-token-for-verification\"}")
+  "{\"user\":\"$BOB\",\"deviceId\":\"verify-install-android-$$\",\"platform\":\"android\",\"fcmToken\":\"bogus-token-for-verification\"}")
 check 200 "$(code "$R")" "bob registers an Android device"
 B_DEV_AND=$(body "$R" | jqp 'd["id"]')
 
@@ -292,8 +306,107 @@ reject "$(code "$(req POST /api/freecaller/livekit-token "$A_TOK" "{\"callId\":\
 reject "$(code "$(req POST /api/freecaller/livekit-token "$A_TOK" '{}')")" \
   "callId is required"
 
+# ---------- contact discovery + invitations ----------------------------------
+section "9. contacts (/api/freecaller/match-contacts, /api/freecaller/invite)"
+
+# Discovery matches on the roster's phone numbers, so give bob one.
+BOB_PHONE="+79990000$(printf '%03d' $((RANDOM % 1000)))"
+req PATCH "/api/collections/users/records/$BOB" "$SU_TOKEN" \
+  "{\"phone\":\"$BOB_PHONE\"}" >/dev/null
+
+reject "$(code "$(req POST /api/freecaller/match-contacts "" "{\"phones\":[\"$BOB_PHONE\"]}")")" \
+  "match-contacts requires sign-in"
+
+R=$(req POST /api/freecaller/match-contacts "$A_TOK" "{\"phones\":[\"$BOB_PHONE\",\"+79999999999\"]}")
+check 200 "$(code "$R")" "alice matches her address book"
+MATCHED=$(body "$R" | jqp 'd["matches"]')
+if [[ "$MATCHED" == *"$BOB"* ]]; then
+  printf '  \033[32mPASS\033[0m    -> bob'"'"'s number resolved to his uid\n'
+else
+  printf '  \033[31mFAIL\033[0m    -> bob NOT matched: %s\n' "$MATCHED"
+  FAILED=$((FAILED+1))
+fi
+
+# Your own number must never come back as a contact of yours.
+req PATCH "/api/collections/users/records/$ALICE" "$SU_TOKEN" \
+  '{"phone":"+79990001111"}' >/dev/null
+MATCHED=$(body "$(req POST /api/freecaller/match-contacts "$A_TOK" '{"phones":["+79990001111"]}')" | jqp 'd["matches"]')
+if [[ "$MATCHED" != *"$ALICE"* ]]; then
+  printf '  \033[32mPASS\033[0m    -> alice is never matched to herself\n'
+else
+  printf '  \033[31mFAIL\033[0m    -> alice matched herself: %s\n' "$MATCHED"
+  FAILED=$((FAILED+1))
+fi
+
+reject "$(code "$(req POST /api/freecaller/invite "$A_TOK" '{"name":"Nobody","phone":"+79990002222"}')")" \
+  "invite without an email is rejected"
+
+INVITE_EMAIL="verify-invitee-$$@example.invalid"
+R=$(req POST /api/freecaller/invite "$A_TOK" \
+  "{\"name\":\"Invitee\",\"phone\":\"+79990002222\",\"email\":\"$INVITE_EMAIL\"}")
+check 200 "$(code "$R")" "alice invites someone new"
+INVITEE=$(body "$R" | jqp 'd["uid"]')
+
+ALICE_CONTACTS=$(body "$(req GET "/api/collections/users/records/$ALICE" "$SU_TOKEN")" | jqp 'd.get("contacts")')
+INVITEE_CONTACTS=$(body "$(req GET "/api/collections/users/records/$INVITEE" "$SU_TOKEN")" | jqp 'd.get("contacts")')
+if [[ "$ALICE_CONTACTS" == *"$INVITEE"* && "$INVITEE_CONTACTS" == *"$ALICE"* ]]; then
+  printf '  \033[32mPASS\033[0m    -> linked BOTH ways (a one-way roster edge is useless)\n'
+else
+  printf '  \033[31mFAIL\033[0m    -> not mutually linked: %s / %s\n' "$ALICE_CONTACTS" "$INVITEE_CONTACTS"
+  FAILED=$((FAILED+1))
+fi
+
+# Inviting the same person again must link, never duplicate the account.
+R=$(req POST /api/freecaller/invite "$A_TOK" \
+  "{\"name\":\"Invitee\",\"phone\":\"+79990002222\",\"email\":\"$INVITE_EMAIL\"}")
+check 200 "$(code "$R")" "inviting the same person twice is idempotent"
+if [ "$(body "$R" | jqp 'd["uid"]')" = "$INVITEE" ]; then
+  printf '  \033[32mPASS\033[0m    -> reused the existing account\n'
+else
+  printf '  \033[31mFAIL\033[0m    -> created a SECOND account for the same person\n'
+  FAILED=$((FAILED+1))
+fi
+
+# ---------- fixed reviewer codes ---------------------------------------------
+section "10. pinned review codes (pb_hooks/review_otp.pb.js)"
+
+REVIEW_FILE=/etc/freecaller/review-otp.json
+if [ -e "$REVIEW_FILE" ]; then
+  echo "  SKIP — $REVIEW_FILE exists; not touching a live review config"
+else
+  PINNED="13571357"
+  printf '{"verify-carol@example.invalid":"%s"}\n' "$PINNED" > "$REVIEW_FILE"
+  chmod 640 "$REVIEW_FILE"; chgrp pocketbase "$REVIEW_FILE" 2>/dev/null
+
+  # request-otp mails the (ignored) generated code, so a mail transport that
+  # cannot deliver to example.invalid makes this inconclusive rather than
+  # failing — the pinning itself is what is under test.
+  OTP_ID=$(body "$(req POST /api/collections/users/request-otp "" \
+    '{"email":"verify-carol@example.invalid"}')" | jqp 'd["otpId"]')
+
+  if [ -z "$OTP_ID" ]; then
+    echo "  SKIP — request-otp returned no otpId (SMTP cannot deliver to example.invalid?)"
+  else
+    check 200 "$(code "$(req POST /api/collections/users/auth-with-otp "" \
+      "{\"otpId\":\"$OTP_ID\",\"password\":\"$PINNED\"}")")" \
+      "listed account signs in with the PINNED code"
+
+    # The blast radius is exactly the listed accounts and no one else.
+    OTP_ID=$(body "$(req POST /api/collections/users/request-otp "" \
+      '{"email":"verify-bob@example.invalid"}')" | jqp 'd["otpId"]')
+    if [ -n "$OTP_ID" ]; then
+      reject "$(code "$(req POST /api/collections/users/auth-with-otp "" \
+        "{\"otpId\":\"$OTP_ID\",\"password\":\"$PINNED\"}")")" \
+        "an UNLISTED account is NOT signed in by that code"
+    fi
+  fi
+
+  rm -f "$REVIEW_FILE"
+  echo "  ($REVIEW_FILE removed — the file IS the off switch)"
+fi
+
 # ---------- account deletion (App Store 5.1.1(v)) ----------------------------
-section "9. account deletion cascade"
+section "11. account deletion cascade"
 CALL2=$(cat /proc/sys/kernel/random/uuid)
 req POST /api/collections/calls/records "$A_TOK" \
   "{\"id\":\"$CALL2\",\"callerId\":\"$ALICE\",\"calleeId\":\"$BOB\",\"state\":\"ringing\"}" >/dev/null
@@ -318,8 +431,8 @@ else
 fi
 
 # ---------- cleanup ----------------------------------------------------------
-section "10. cleanup"
-for u in "$BOB" "$CAROL"; do req DELETE "/api/collections/users/records/$u" "$SU_TOKEN" >/dev/null; done
+section "12. cleanup"
+for u in "$BOB" "$CAROL" "$INVITEE"; do req DELETE "/api/collections/users/records/$u" "$SU_TOKEN" >/dev/null; done
 req DELETE "/api/collections/reports/records/$A_REPORT" "$SU_TOKEN" >/dev/null
 echo "  test users and report removed"
 

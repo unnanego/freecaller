@@ -130,15 +130,53 @@ def apns_jwt(cfg: dict) -> str:
     return token
 
 
-def apns_host(cfg: dict) -> str:
+APNS_PROD = "https://api.push.apple.com"
+APNS_SANDBOX = "https://api.sandbox.push.apple.com"
+
+
+def apns_hosts(cfg: dict) -> list:
+    """Configured environment first, then the other one.
+
+    A token-based .p8 auth key is valid for BOTH environments — what is
+    environment-specific is the device token: one minted under a development
+    profile resolves only on the sandbox host, and a TestFlight/App Store one
+    only on production. Sending to the wrong host fails with 400 BadDeviceToken,
+    which looks exactly like a dead token.
+
+    Rather than making `apns.env` a global switch that has to be flipped
+    whenever someone installs a locally-built app (and flipped back before an
+    upload, or the whole family stops ringing), treat it as a preference and try
+    the other host if the first one says the token doesn't belong there. A
+    developer's phone and the family's store builds then coexist.
+    """
     prod = cfg["apns"].get("env") == "production"
-    return (
-        "https://api.push.apple.com" if prod else "https://api.sandbox.push.apple.com"
-    )
+    return [APNS_PROD, APNS_SANDBOX] if prod else [APNS_SANDBOX, APNS_PROD]
+
+
+def is_wrong_environment(status: int, response: str) -> bool:
+    """The one APNs answer that means "right token, wrong host"."""
+    return status == 400 and "BadDeviceToken" in response
 
 
 def send_voip(cfg: dict, device_token: str, body: dict) -> tuple:
-    """POST a VoIP push over HTTP/2 via curl. Returns (status, response_text)."""
+    """POST a VoIP push. Returns (status, response_text).
+
+    Tries the second environment only on BadDeviceToken; any other failure is a
+    real error and is returned as-is rather than retried against a host that
+    cannot help. If BOTH hosts reject the token it stays a BadDeviceToken, so
+    the caller still prunes it — a token that is dead in both environments is
+    dead.
+    """
+    result = (0, "")
+    for host in apns_hosts(cfg):
+        result = post_voip(cfg, host, device_token, body)
+        if result[0] == 200 or not is_wrong_environment(*result):
+            return result
+    return result
+
+
+def post_voip(cfg: dict, host: str, device_token: str, body: dict) -> tuple:
+    """One VoIP push over HTTP/2 via curl, to one APNs host."""
     apns = cfg["apns"]
     args = [
         "curl", "-s", "--http2", "--max-time", str(HTTP_TIMEOUT),
@@ -152,7 +190,7 @@ def send_voip(cfg: dict, device_token: str, body: dict) -> tuple:
         "-d", json.dumps(body),
         # The bearer token comes in on stdin so it never appears in `ps`.
         "-K", "-",
-        "{}/3/device/{}".format(apns_host(cfg), device_token),
+        "{}/3/device/{}".format(host, device_token),
     ]
     proc = subprocess.run(
         args,
@@ -348,7 +386,8 @@ def selftest(cfg: dict) -> int:
         head = json.loads(base64.urlsafe_b64decode(token.split(".")[0] + "=="))
         print("APNs provider JWT : OK (alg={}, kid={}, {} chars)".format(
             head["alg"], head["kid"], len(token)))
-        print("APNs endpoint     : {}".format(apns_host(cfg)))
+        hosts = apns_hosts(cfg)
+        print("APNs endpoints    : {} (falls back to {})".format(hosts[0], hosts[1]))
     except Exception as err:  # noqa: BLE001
         print("APNs provider JWT : FAILED — {}: {}".format(type(err).__name__, err))
         ok = False
