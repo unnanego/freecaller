@@ -1,0 +1,24 @@
+{
+  "_comment": [
+    "Template for /etc/freecaller/livekit.json on the PocketBase host.",
+    "NEVER commit the real file. Install: root:pocketbase, chmod 640.",
+    "",
+    "livekit.apiKey / apiSecret must match /etc/livekit/livekit.yaml on this host.",
+    "Changing them requires restarting livekit AND updating this file together,",
+    "or token minting silently produces tokens the SFU rejects.",
+    "",
+    "turn.sharedSecret must match `static-auth-secret` in /etc/turnserver.conf.",
+    "Leave turn.url empty to disable the relay (clients then go direct only)."
+  ],
+
+  "livekit": {
+    "apiKey": "REPLACE_WITH_LIVEKIT_API_KEY",
+    "apiSecret": "REPLACE_WITH_LIVEKIT_API_SECRET",
+    "url": "wss://lk.holographica.space"
+  },
+
+  "turn": {
+    "url": "turns:turn.holographica.space:443",
+    "sharedSecret": "REPLACE_WITH_COTURN_STATIC_AUTH_SECRET"
+  }
+}

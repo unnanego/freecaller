@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "Template for /etc/freecaller/push.json on the PocketBase host.",
+    "NEVER commit the real file or the keys it points at.",
+    "Install:  root:pocketbase, chmod 640 (the hook runs as the pocketbase user).",
+    "",
+    "apns.env: 'production' for App Store / TestFlight builds,",
+    "          'sandbox' for builds signed with a development profile.",
+    "          Wrong value = APNs returns 400 BadDeviceToken for valid tokens."
+  ],
+
+  "apns": {
+    "keyPath": "/etc/freecaller/apns.p8",
+    "keyId": "REPLACE_WITH_APNS_KEY_ID",
+    "teamId": "R9577QC7DM",
+    "bundleId": "com.unnanego.freecaller",
+    "env": "production"
+  },
+
+  "fcm": {
+    "serviceAccountPath": "/etc/freecaller/fcm.json"
+  }
+}

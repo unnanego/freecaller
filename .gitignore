@@ -59,3 +59,11 @@ tools/*.js
 
 # Self-hosted LiveKit — real configs hold the API secret / domain
 deploy/livekit/livekit.yaml
+
+# Self-hosted PocketBase — real configs hold the APNs key id, LiveKit API
+# secret and coturn shared secret. Only the *.example templates are committed;
+# the live files live in /etc/freecaller on the server.
+deploy/pocketbase/push/push.json
+deploy/pocketbase/livekit/livekit.json
+deploy/pocketbase/**/*.p8
+deploy/pocketbase/**/fcm.json
