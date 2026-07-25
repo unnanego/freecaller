@@ -7,13 +7,13 @@ import '../data/models.dart';
 import 'contact_access_sheet.dart';
 import 'theme/modernist.dart';
 
-/// Profile + account. Shows the reusable login code (needed to sign back in on
-/// another device) and guards sign-out with a confirmation.
+/// Profile + account. Shows the email the user signs in with (a fresh code is
+/// mailed there each time) and guards sign-out with a confirmation.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({
     super.key,
     required this.profile,
-    required this.loginCode,
+    required this.signInEmail,
     required this.discovery,
     required this.onSignOut,
     required this.onSaveName,
@@ -22,7 +22,7 @@ class SettingsScreen extends StatelessWidget {
   });
 
   final UserProfile profile;
-  final String? loginCode;
+  final String? signInEmail;
   final ContactDiscoveryRepo discovery;
   final Future<void> Function() onSignOut;
   final Future<void> Function(String name) onSaveName;
@@ -84,7 +84,7 @@ class SettingsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(Mod.s6, Mod.s4, Mod.s6, Mod.s2),
             child: Text(loc.sectionAccount, style: Mod.kicker(color: Mod.neutral600)),
           ),
-          if (loginCode != null) _loginCodeBlock(context, loc, loginCode!),
+          if (signInEmail != null) _signInEmailBlock(context, loc, signInEmail!),
           _row(
             context,
             label: loc.contactAccessRow,
@@ -124,14 +124,15 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  /// The reusable login code + a share button, so the user can save/relay it.
-  Widget _loginCodeBlock(BuildContext context, AppLocalizations loc, String code) {
+  /// The address a sign-in code gets mailed to, + a share button so the user
+  /// can save or relay it.
+  Widget _signInEmailBlock(BuildContext context, AppLocalizations loc, String email) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(Mod.s6, Mod.s3, Mod.s6, Mod.s3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(loc.loginCodeLabel, style: Mod.meta(color: Mod.neutral700)),
+          Text(loc.signInEmailLabel, style: Mod.meta(color: Mod.neutral700)),
           const SizedBox(height: 5),
           Row(
             children: [
@@ -144,17 +145,21 @@ class SettingsScreen extends StatelessWidget {
                     color: Mod.surface,
                     border: Border.all(color: Mod.divider, width: 2),
                   ),
-                  child: Text(code,
-                      style: Mod.h2().copyWith(fontSize: 28, letterSpacing: 4)),
+                  child: Text(
+                    email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Mod.h2().copyWith(fontSize: 18),
+                  ),
                 ),
               ),
               const SizedBox(width: Mod.s2),
               Semantics(
                 button: true,
-                label: loc.shareCode,
+                label: loc.shareEmail,
                 child: InkWell(
                   onTap: () => SharePlus.instance
-                      .share(ShareParams(text: loc.loginCodeShare(code))),
+                      .share(ShareParams(text: loc.signInEmailShare(email))),
                   child: Container(
                     height: 52,
                     width: 52,
@@ -169,7 +174,7 @@ class SettingsScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text(loc.loginCodeHint, style: Mod.meta(color: Mod.neutral600)),
+          Text(loc.signInEmailHint, style: Mod.meta(color: Mod.neutral600)),
         ],
       ),
     );

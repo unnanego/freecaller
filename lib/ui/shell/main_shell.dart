@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
-
 import '../../data/contact_discovery.dart';
 import '../../data/models.dart';
 import '../contacts_screen.dart';
@@ -15,7 +14,7 @@ class MainShell extends StatefulWidget {
     required this.profile,
     required this.recents,
     required this.names,
-    required this.loginCode,
+    required this.signInEmail,
     required this.discovery,
     required this.onCall,
     required this.onSignOut,
@@ -27,7 +26,7 @@ class MainShell extends StatefulWidget {
   final UserProfile profile;
   final List<CallDoc> recents;
   final ContactNames names;
-  final String? loginCode;
+  final String? signInEmail;
   final ContactDiscoveryRepo discovery;
   final void Function(Contact contact, {required bool video}) onCall;
   final Future<void> Function() onSignOut;
@@ -58,7 +57,7 @@ class _MainShellState extends State<MainShell> {
           ContactsScreen(discovery: widget.discovery, onCall: widget.onCall),
           SettingsScreen(
             profile: widget.profile,
-            loginCode: widget.loginCode,
+            signInEmail: widget.signInEmail,
             discovery: widget.discovery,
             onSignOut: widget.onSignOut,
             onSaveName: widget.onSaveName,

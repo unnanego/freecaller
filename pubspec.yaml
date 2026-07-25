@@ -13,10 +13,10 @@ dependencies:
     sdk: flutter
   intl: any
 
+  # Firebase is kept for FCM only — the way an Android phone is woken for an
+  # incoming call. Auth, the roster, call signaling and room tokens all moved to
+  # the self-hosted PocketBase below. (iOS is woken by PushKit, not FCM.)
   firebase_core: ^4.4.0
-  firebase_auth: ^6.4.0
-  cloud_firestore: ^6.4.0
-  cloud_functions: ^6.1.0
   firebase_messaging: ^16.1.0
   pocketbase: ^0.24.0
   livekit_client: ^2.8.0

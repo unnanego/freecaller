@@ -1,18 +1,19 @@
 import 'dart:async';
 
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:pocketbase/pocketbase.dart';
 
+import '../core/config.dart';
 import '../core/log.dart';
 
 /// Wraps a single LiveKit room connection (the app is one-call-at-a-time).
 /// Room name == callId; the server mints a token per participant. Voice
 /// calls default to the earpiece, video calls to the speaker + front camera.
 class LiveKitService {
-  LiveKitService(this._functions);
+  LiveKitService(this._pb);
 
-  final FirebaseFunctions _functions;
+  final PocketBase _pb;
 
   Room? _room;
   EventsListener<RoomEvent>? _listener;
@@ -43,8 +44,14 @@ class LiveKitService {
   Future<void> connect(String callId, {required bool video}) async {
     // Never open a second room — a duplicate identity would kick the first.
     if (_room != null) return;
-    final result = await _functions.httpsCallable('mintLiveKitToken').call({'callId': callId});
-    final data = Map<String, dynamic>.from(result.data as Map);
+    // The server checks we are a participant of a call that is still live
+    // before it mints anything (pb_hooks/livekit.pb.js).
+    final result = await _pb.send<Map<String, dynamic>>(
+      Config.pbLiveKitTokenPath,
+      method: 'POST',
+      body: {'callId': callId},
+    );
+    final data = Map<String, dynamic>.from(result);
     final token = data['token'] as String;
     final url = data['url'] as String;
     // Optional TURN relay advertised by the backend (coturn over TLS/443) for

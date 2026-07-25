@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:pocketbase/pocketbase.dart';
 
 class UserProfile {
@@ -14,15 +14,28 @@ class UserProfile {
   final String displayName;
   final List<String> contactUids;
 
-  factory UserProfile.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data()!;
-    return UserProfile(
-      uid: doc.id,
-      phone: data['phone'] as String? ?? '',
-      displayName: data['displayName'] as String? ?? '',
-      contactUids: List<String>.from(data['contacts'] as List? ?? const []),
-    );
-  }
+  /// `contacts` is a relation field, which the API serialises as a list of
+  /// record ids.
+  factory UserProfile.fromRecord(RecordModel record) => UserProfile(
+        uid: record.id,
+        phone: record.get<String>('phone', ''),
+        displayName: record.get<String>('displayName', ''),
+        contactUids: record.get<List<dynamic>>('contacts', const []).cast<String>(),
+      );
+
+  /// Value equality so a repo that re-reads the profile on a timer can drop
+  /// unchanged reads instead of rebuilding the shell and re-teaching Siri.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UserProfile &&
+          other.uid == uid &&
+          other.phone == phone &&
+          other.displayName == displayName &&
+          listEquals(other.contactUids, contactUids);
+
+  @override
+  int get hashCode => Object.hash(uid, phone, displayName, Object.hashAll(contactUids));
 }
 
 class Contact {
@@ -31,6 +44,17 @@ class Contact {
   final String uid;
   final String displayName;
   final String phone;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Contact &&
+          other.uid == uid &&
+          other.displayName == displayName &&
+          other.phone == phone;
+
+  @override
+  int get hashCode => Object.hash(uid, displayName, phone);
 }
 
 enum CallState { ringing, accepted, declined, cancelled, missed, ended }
@@ -59,22 +83,8 @@ class CallDoc {
   final CallState state;
   final DateTime? createdAt;
 
-  factory CallDoc.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data()!;
-    return CallDoc(
-      callId: doc.id,
-      callerId: data['callerId'] as String? ?? '',
-      calleeId: data['calleeId'] as String? ?? '',
-      callerName: data['callerName'] as String? ?? '',
-      callerPhone: data['callerPhone'] as String? ?? '',
-      isVideo: data['isVideo'] as bool? ?? false,
-      state: callStateFrom(data['state'] as String?),
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
-    );
-  }
-
-  /// PocketBase counterpart of [CallDoc.fromDoc]. `createdAt` comes from the
-  /// record's own `created` autodate rather than a field we write.
+  /// `createdAt` comes from the record's own `created` autodate rather than a
+  /// field we write.
   factory CallDoc.fromRecord(RecordModel record) => CallDoc(
         callId: record.id,
         callerId: record.get<String>('callerId', ''),
@@ -87,8 +97,8 @@ class CallDoc {
       );
 
   /// Value equality lets a watch skip re-emitting an unchanged call — needed
-  /// because the PocketBase repo reconciles on a timer and would otherwise
-  /// churn the engine every few seconds.
+  /// because the repo reconciles on a timer and would otherwise churn the
+  /// engine every few seconds.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||

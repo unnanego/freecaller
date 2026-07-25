@@ -1,8 +1,9 @@
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter_contacts/flutter_contacts.dart' as fc;
 import 'package:phone_numbers_parser/phone_numbers_parser.dart';
+import 'package:pocketbase/pocketbase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/config.dart';
 import '../core/log.dart';
 import 'models.dart';
 
@@ -57,9 +58,9 @@ class ContactNames {
 /// This is a sighted-family convenience — the blind primary user only answers
 /// calls and uses Siri, so it never drives their call flow.
 class ContactDiscoveryRepo {
-  ContactDiscoveryRepo(this._functions);
+  ContactDiscoveryRepo(this._pb);
 
-  final FirebaseFunctions _functions;
+  final PocketBase _pb;
 
   // Persist the set of BLOCKED device ids, so a brand-new contact defaults to
   // allowed (like WhatsApp) without us having to enumerate everyone up front.
@@ -90,15 +91,21 @@ class ContactDiscoveryRepo {
   Future<bool> hasPermission() =>
       fc.FlutterContacts.permissions.has(fc.PermissionType.read);
 
-  /// Invites someone by name + phone: provisions/links them and returns a
-  /// one-time activation code to share out-of-band (the invitee redeems it to
-  /// sign in). No SMS is sent — the inviter shares the code via their messenger.
-  Future<String> invite(String name, String phone) async {
-    final result = await _functions.httpsCallable('inviteContact').call({
-      'name': name,
-      'phone': phone,
-    });
-    return Map<String, dynamic>.from(result.data as Map)['code'] as String;
+  /// Invites someone by name, phone and email: provisions their account (or
+  /// reuses one that already exists) and links the two of you as mutual
+  /// contacts.
+  ///
+  /// There is no code to hand over any more — the email address IS the
+  /// credential, and the invitee gets a fresh one-time code emailed whenever
+  /// they sign in. The inviter still tells them out of band which address to
+  /// use, which is what the returned value is for.
+  Future<String> invite(String name, String phone, String email) async {
+    final result = await _pb.send<Map<String, dynamic>>(
+      Config.pbInvitePath,
+      method: 'POST',
+      body: {'name': name, 'phone': phone, 'email': email},
+    );
+    return result['email'] as String;
   }
 
   /// Requests contacts access. If the OS won't prompt again (already decided),
@@ -214,10 +221,12 @@ class ContactDiscoveryRepo {
   /// Ask the backend which numbers belong to registered users → {e164: uid}.
   Future<Map<String, String>> _matchRegistered(List<String> phones) async {
     try {
-      final result = await _functions
-          .httpsCallable('matchContacts')
-          .call({'phones': phones});
-      final matches = (result.data['matches'] as List)
+      final result = await _pb.send<Map<String, dynamic>>(
+        Config.pbMatchContactsPath,
+        method: 'POST',
+        body: {'phones': phones},
+      );
+      final matches = (result['matches'] as List)
           .map((m) => Map<String, dynamic>.from(m as Map));
       return {
         for (final m in matches)

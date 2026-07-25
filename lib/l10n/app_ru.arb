@@ -2,14 +2,18 @@
   "@@locale": "ru",
   "appTitle": "Звонилка",
   "activationTitle": "Активация",
-  "activationPrompt": "Введите код активации",
-  "activationHint": "Код из шести цифр",
   "activationSubmit": "Активировать",
   "activationInvalid": "Неверный или использованный код",
   "activationNetworkError": "Нет связи. Попробуйте ещё раз",
+  "activationEmailPrompt": "Введите вашу почту",
+  "activationEmailHint": "например, name@mail.ru",
+  "activationEmailSubmit": "Прислать код",
+  "activationCodePrompt": "Введите код из письма",
+  "activationCodeHint": "Код из восьми цифр",
+  "activationChangeEmail": "Изменить почту",
   "loadError": "Не удалось загрузить. Проверьте интернет",
   "retry": "Повторить",
-  "useAnotherCode": "Ввести другой код",
+  "useAnotherCode": "Войти с другой почты",
   "homeNoContacts": "Нет контактов. Обратитесь к администратору",
   "callContact": "Позвонить {name}",
   "@callContact": {
@@ -158,35 +162,37 @@
   "turnOffVideo": "Выключить видео",
   "save": "Сохранить",
   "inviteTitle": "Пригласить",
-  "inviteInfo": "Введите имя и номер телефона — появится код для входа, которым можно поделиться.",
+  "inviteInfo": "Введите имя, телефон и почту — мы создадим аккаунт, а код для входа придёт на эту почту.",
   "inviteName": "Имя",
+  "inviteEmail": "Почта",
+  "inviteEmailHint": "На неё придёт код для входа, например name@mail.ru",
   "invitePhone": "Телефон",
   "invitePhoneHint": "В международном формате с кодом страны, например +79161234567",
   "inviteFailed": "Не удалось пригласить. Проверьте номер и попробуйте снова.",
-  "inviteShare": "Приглашаю тебя в «Звонилку», {name}! Установи приложение и введи код для входа: {code}",
+  "inviteShare": "Приглашаю тебя в «Звонилку», {name}! Установи приложение и введи почту {email} — на неё придёт код для входа.",
   "@inviteShare": {
     "placeholders": {
       "name": { "type": "String" },
-      "code": { "type": "String" }
+      "email": { "type": "String" }
     }
   },
-  "loginCodeLabel": "Ваш код для входа",
-  "loginCodeHint": "Понадобится, чтобы войти на другом устройстве. Никому не показывайте.",
-  "shareCode": "Поделиться кодом",
-  "loginCodeShare": "Мой код для входа в «Звонилку»: {code}",
-  "@loginCodeShare": {
+  "signInEmailLabel": "Ваша почта для входа",
+  "signInEmailHint": "Понадобится, чтобы войти на другом устройстве: на неё придёт код.",
+  "shareEmail": "Поделиться почтой",
+  "signInEmailShare": "Моя почта для входа в «Звонилку»: {email}",
+  "@signInEmailShare": {
     "placeholders": {
-      "code": { "type": "String" }
+      "email": { "type": "String" }
     }
   },
   "signOutConfirmTitle": "Выйти?",
-  "signOutConfirmBody": "Чтобы войти снова, понадобится код для входа. Сохраните его заранее (Настройки → Ваш код для входа).",
+  "signOutConfirmBody": "Чтобы войти снова, понадобится ваша почта — на неё придёт код. Проверьте её заранее (Настройки → Ваша почта для входа).",
   "contactsConsentTitle": "Найти близких в Звонилке",
   "contactsConsentBody": "Чтобы показать, кто из ваших контактов уже пользуется Звонилкой, приложение отправит номера телефонов из вашей адресной книги на наш сервер для сравнения. Номера используются только для поиска совпадений и не сохраняются.",
   "contactsConsentAgree": "Разрешить и найти",
   "deleteAccountRow": "Удалить аккаунт",
   "deleteAccountConfirmTitle": "Удалить аккаунт?",
-  "deleteAccountConfirmBody": "Ваш профиль, контакты, код для входа и история звонков будут удалены безвозвратно. Отменить это действие нельзя.",
+  "deleteAccountConfirmBody": "Ваш профиль, контакты и история звонков будут удалены безвозвратно. Отменить это действие нельзя.",
   "deleteAccountConfirm": "Удалить",
   "deleteAccountFailed": "Не удалось удалить аккаунт. Попробуйте ещё раз.",
   "cancel": "Отмена"

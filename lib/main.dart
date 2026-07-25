@@ -1,17 +1,14 @@
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app.dart';
-import 'core/config.dart';
 import 'data/call_repo.dart';
 import 'data/contact_discovery.dart';
 import 'data/device_repo.dart';
+import 'data/pb_client.dart';
 import 'data/user_repo.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
@@ -47,26 +44,30 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Firebase is here for ONE thing: FCM, which is how an Android phone gets
+  // woken for an incoming call. Everything else — auth, the roster, call
+  // signaling, room tokens — is our own PocketBase. (iOS is woken by PushKit
+  // and never touches FCM.)
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   if (Platform.isAndroid) {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
 
-  final firestore = FirebaseFirestore.instance;
-  final functions = FirebaseFunctions.instanceFor(region: Config.functionsRegion);
+  final pb = await createPocketBase();
   final callUi = CallKitCallUi();
-  final auth = AuthService(FirebaseAuth.instance, functions);
+  final auth = AuthService(pb);
 
   final services = AppServices(
     auth: auth,
-    users: UserRepo(firestore),
-    calls: FirestoreCallRepo(firestore),
-    livekit: LiveKitService(functions),
+    users: UserRepo(pb),
+    calls: CallRepo(pb),
+    livekit: LiveKitService(pb),
     callUi: callUi,
     intents: Platform.isIOS ? IosIntentsBridge() : NoopIntentsBridge(),
-    pushRegistrar: PushRegistrar(auth, DeviceRepo(firestore), callUi),
-    discovery: ContactDiscoveryRepo(functions),
+    pushRegistrar: PushRegistrar(auth, DeviceRepo(pb), callUi),
+    discovery: ContactDiscoveryRepo(pb),
   );
 
   runApp(FreecallerApp(services: services));

@@ -63,9 +63,9 @@ class FreecallerApp extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
-          final user = snapshot.data;
-          if (user == null) return ActivationScreenHost(services: services);
-          return SignedInShell(services: services, uid: user.uid);
+          final uid = snapshot.data;
+          if (uid == null) return ActivationScreenHost(services: services);
+          return SignedInShell(services: services, uid: uid);
         },
       ),
     );
@@ -99,13 +99,13 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   List<Contact> _contacts = const [];
   List<CallDoc> _recents = const [];
   ContactNames _names = ContactNames.empty;
-  String? _loginCode;
+  String? _signInEmail;
   bool _bootstrapFailed = false;
   CallOutcome _announcedOutcome = CallOutcome.none;
 
   StreamSubscription<UserProfile?>? _profileBootSub;
   Timer? _bootTimeout;
-  StreamSubscription<String?>? _loginCodeSub;
+  StreamSubscription<String?>? _signInEmailSub;
   StreamSubscription<List<Contact>>? _contactsSub;
   StreamSubscription<OutgoingCallRequest>? _siriSub;
   StreamSubscription<RemoteMessage>? _fcmForeground;
@@ -127,6 +127,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     if (state == AppLifecycleState.resumed) {
       _engine?.ensureCameraOn();
       _loadNames(); // contacts may have been granted/edited while away
+      _s.auth.refreshSession(); // push the session expiry forward
     }
   }
 
@@ -155,12 +156,17 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     _bootstrapFailed = false;
     _bootTimeout?.cancel();
     _profileBootSub?.cancel();
-    // A fresh install has no Firestore cache, so this first read hits the
-    // server — and a reviewer's VPN can throttle Firestore's (gRPC) connection
-    // even though HTTPS sign-in got through (that was the App Store 2.1
-    // "loads indefinitely" cause). So never hang on it: show a retry after a
-    // timeout, but KEEP listening so a slow connection still finishes bootstrap
-    // on its own, without needing another tap.
+    // Re-issue the session token on every launch. Backends with a hard token
+    // ceiling (PocketBase: 3 years) only keep a device signed in forever if the
+    // client keeps pushing the expiry out; being silently logged out is the
+    // worst failure this app has. Best-effort, never blocks bootstrap.
+    _s.auth.refreshSession();
+    // This first profile read hits the server — nothing is cached on a fresh
+    // install — and a reviewer's VPN can throttle it even though sign-in got
+    // through (that was the App Store 2.1 "loads indefinitely" cause). So never
+    // hang on it: show a retry after a timeout, but KEEP listening so a slow
+    // connection still finishes bootstrap on its own, without needing another
+    // tap.
     _bootTimeout = Timer(const Duration(seconds: 15), () {
       if (mounted && _engine == null) setState(() => _bootstrapFailed = true);
     });
@@ -201,11 +207,10 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     });
 
     _loadNames();
-    // Ensure a permanent login code exists, then surface it in Settings.
-    _s.auth.ensureLoginCode();
-    _loginCodeSub = _s.users.watchLoginCode(widget.uid).listen(
-      (code) { if (mounted) setState(() => _loginCode = code); },
-      onError: (Object e) => log('login code', error: e),
+    // Surface the address a sign-in code gets mailed to, for Settings.
+    _signInEmailSub = _s.users.watchSignInEmail().listen(
+      (email) { if (mounted) setState(() => _signInEmail = email); },
+      onError: (Object e) => log('sign-in email', error: e),
     );
     _s.callUi.requestPermissions().catchError((Object e) => log('permissions', error: e));
     _s.pushRegistrar.register().catchError((Object e) => log('register', error: e));
@@ -319,7 +324,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     WidgetsBinding.instance.removeObserver(this);
     _bootTimeout?.cancel();
     _profileBootSub?.cancel();
-    _loginCodeSub?.cancel();
+    _signInEmailSub?.cancel();
     _contactsSub?.cancel();
     _siriSub?.cancel();
     _fcmForeground?.cancel();
@@ -352,7 +357,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       profile: profile,
       recents: _recents,
       names: _names,
-      loginCode: _loginCode,
+      signInEmail: _signInEmail,
       discovery: _s.discovery,
       onCall: (contact, {required video}) => engine.startCall(contact, video: video),
       onSignOut: _signOut,

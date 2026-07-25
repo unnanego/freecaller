@@ -2,14 +2,18 @@
   "@@locale": "en",
   "appTitle": "Freecaller",
   "activationTitle": "Activation",
-  "activationPrompt": "Enter the activation code",
-  "activationHint": "Six-digit code",
   "activationSubmit": "Activate",
   "activationInvalid": "Invalid or already used code",
   "activationNetworkError": "No connection. Try again",
+  "activationEmailPrompt": "Enter your email",
+  "activationEmailHint": "e.g. name@mail.com",
+  "activationEmailSubmit": "Send me a code",
+  "activationCodePrompt": "Enter the code from the email",
+  "activationCodeHint": "Eight-digit code",
+  "activationChangeEmail": "Change email",
   "loadError": "Couldn't load. Check your connection",
   "retry": "Retry",
-  "useAnotherCode": "Use a different code",
+  "useAnotherCode": "Sign in with another email",
   "homeNoContacts": "No contacts yet. Ask your admin",
   "callContact": "Call {name}",
   "@callContact": {
@@ -158,35 +162,37 @@
   "turnOffVideo": "Turn off video",
   "save": "Save",
   "inviteTitle": "Invite",
-  "inviteInfo": "Enter a name and phone number — you'll get a sign-in code to share.",
+  "inviteInfo": "Enter a name, phone and email — we'll create the account, and the sign-in code goes to that email.",
   "inviteName": "Name",
+  "inviteEmail": "Email",
+  "inviteEmailHint": "The sign-in code goes here, e.g. name@mail.com",
   "invitePhone": "Phone",
   "invitePhoneHint": "International format with country code, e.g. +79161234567",
   "inviteFailed": "Couldn't create the invite. Check the number and try again.",
-  "inviteShare": "Join me on Zvonilka, {name}! Install the app and enter this sign-in code: {code}",
+  "inviteShare": "Join me on Zvonilka, {name}! Install the app and enter the email {email} — a sign-in code will be sent there.",
   "@inviteShare": {
     "placeholders": {
       "name": { "type": "String" },
-      "code": { "type": "String" }
+      "email": { "type": "String" }
     }
   },
-  "loginCodeLabel": "Your login code",
-  "loginCodeHint": "You'll need it to sign in on another device. Keep it private.",
-  "shareCode": "Share code",
-  "loginCodeShare": "My Zvonilka login code: {code}",
-  "@loginCodeShare": {
+  "signInEmailLabel": "Your sign-in email",
+  "signInEmailHint": "You'll need it to sign in on another device: the code is sent there.",
+  "shareEmail": "Share email",
+  "signInEmailShare": "My Zvonilka sign-in email: {email}",
+  "@signInEmailShare": {
     "placeholders": {
-      "code": { "type": "String" }
+      "email": { "type": "String" }
     }
   },
   "signOutConfirmTitle": "Sign out?",
-  "signOutConfirmBody": "To sign back in you'll need your login code. Save it first (Settings → Your login code).",
+  "signOutConfirmBody": "To sign back in you'll need your email — the code is sent there. Check it first (Settings → Your sign-in email).",
   "contactsConsentTitle": "Find family on Zvonilka",
   "contactsConsentBody": "To show which of your contacts already use Zvonilka, the app will send the phone numbers from your address book to our server to match them. Numbers are used only for matching and are not stored.",
   "contactsConsentAgree": "Allow and find",
   "deleteAccountRow": "Delete account",
   "deleteAccountConfirmTitle": "Delete account?",
-  "deleteAccountConfirmBody": "Your profile, contacts, login code and call history will be permanently deleted. This can't be undone.",
+  "deleteAccountConfirmBody": "Your profile, contacts and call history will be permanently deleted. This can't be undone.",
   "deleteAccountConfirm": "Delete",
   "deleteAccountFailed": "Couldn't delete your account. Please try again.",
   "cancel": "Cancel"
