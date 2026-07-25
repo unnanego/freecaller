@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../data/contact_discovery.dart';
 import '../data/models.dart';
@@ -231,10 +230,10 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
   }
 }
 
-/// Invite sheet: enter a name, phone and email → provision the person and
-/// mutual-link, then share the address they sign in with via the OS share
-/// sheet. There is no code to pass along any more — the code is emailed to
-/// them, fresh, every time they sign in.
+/// Invite sheet: enter a name, phone and email → the server provisions the
+/// person, mutual-links you both, and emails them which address to sign in
+/// with. Nothing to pass along by hand: the sign-in code is mailed to that
+/// address when they ask for it.
 class _InviteSheet extends StatefulWidget {
   const _InviteSheet({required this.discovery});
 
@@ -272,11 +271,15 @@ class _InviteSheetState extends State<_InviteSheet> {
       _error = null;
     });
     try {
-      final registered = await widget.discovery.invite(name, phone, email);
+      final emailed = await widget.discovery.invite(name, phone, email);
       if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop();
-      await SharePlus.instance
-          .share(ShareParams(text: loc.inviteShare(name, registered)));
+      // The invite succeeded either way; say which of the two happened, since
+      // "we told them" and "you need to tell them" are different next steps.
+      messenger.showSnackBar(SnackBar(
+        content: Text(emailed ? loc.inviteSent(email) : loc.inviteSentNoEmail(email)),
+      ));
     } catch (_) {
       if (mounted) {
         setState(() {

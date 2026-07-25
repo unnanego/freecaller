@@ -162,17 +162,22 @@
   "turnOffVideo": "Turn off video",
   "save": "Save",
   "inviteTitle": "Invite",
-  "inviteInfo": "Enter a name, phone and email — we'll create the account, and the sign-in code goes to that email.",
+  "inviteInfo": "Enter a name, phone and email — we'll create the account and send an invitation to that address.",
   "inviteName": "Name",
   "inviteEmail": "Email",
   "inviteEmailHint": "The sign-in code goes here, e.g. name@mail.com",
   "invitePhone": "Phone",
   "invitePhoneHint": "International format with country code, e.g. +79161234567",
   "inviteFailed": "Couldn't create the invite. Check the number and try again.",
-  "inviteShare": "Join me on Zvonilka, {name}! Install the app and enter the email {email} — a sign-in code will be sent there.",
-  "@inviteShare": {
+  "inviteSent": "Invitation sent to {email}",
+  "@inviteSent": {
     "placeholders": {
-      "name": { "type": "String" },
+      "email": { "type": "String" }
+    }
+  },
+  "inviteSentNoEmail": "Account created, but the email didn't send. Tell them to sign in with {email}",
+  "@inviteSentNoEmail": {
+    "placeholders": {
       "email": { "type": "String" }
     }
   },

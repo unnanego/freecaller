@@ -347,6 +347,18 @@ R=$(req POST /api/freecaller/invite "$A_TOK" \
 check 200 "$(code "$R")" "alice invites someone new"
 INVITEE=$(body "$R" | jqp 'd["uid"]')
 
+# The invitation email is best-effort: example.invalid cannot receive one, and
+# the invite must still succeed. Proving `emailed` is reported (either way) is
+# what matters — a silent failure would leave the inviter thinking the person
+# was told when nobody was.
+if [ -n "$(body "$R" | jqp 'd.get("emailed")')" ]; then
+  printf '  \033[32mPASS\033[0m    -> reports whether the invitation was emailed (%s)\n' \
+    "$(body "$R" | jqp 'd["emailed"]')"
+else
+  printf '  \033[31mFAIL\033[0m    -> response has no "emailed" field\n'
+  FAILED=$((FAILED+1))
+fi
+
 ALICE_CONTACTS=$(body "$(req GET "/api/collections/users/records/$ALICE" "$SU_TOKEN")" | jqp 'd.get("contacts")')
 INVITEE_CONTACTS=$(body "$(req GET "/api/collections/users/records/$INVITEE" "$SU_TOKEN")" | jqp 'd.get("contacts")')
 if [[ "$ALICE_CONTACTS" == *"$INVITEE"* && "$INVITEE_CONTACTS" == *"$ALICE"* ]]; then

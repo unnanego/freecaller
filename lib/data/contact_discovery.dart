@@ -92,20 +92,20 @@ class ContactDiscoveryRepo {
       fc.FlutterContacts.permissions.has(fc.PermissionType.read);
 
   /// Invites someone by name, phone and email: provisions their account (or
-  /// reuses one that already exists) and links the two of you as mutual
-  /// contacts.
+  /// reuses one that already exists), links the two of you as mutual contacts,
+  /// and emails them which address to sign in with.
   ///
-  /// There is no code to hand over any more — the email address IS the
-  /// credential, and the invitee gets a fresh one-time code emailed whenever
-  /// they sign in. The inviter still tells them out of band which address to
-  /// use, which is what the returned value is for.
-  Future<String> invite(String name, String phone, String email) async {
+  /// Returns whether that email went out. The invite itself has already
+  /// succeeded either way — the account exists and the roster is linked — so a
+  /// mail failure is something to tell the inviter about, not to fail on: they
+  /// can pass the address along themselves.
+  Future<bool> invite(String name, String phone, String email) async {
     final result = await _pb.send<Map<String, dynamic>>(
       Config.pbInvitePath,
       method: 'POST',
       body: {'name': name, 'phone': phone, 'email': email},
     );
-    return result['email'] as String;
+    return result['emailed'] == true;
   }
 
   /// Requests contacts access. If the OS won't prompt again (already decided),

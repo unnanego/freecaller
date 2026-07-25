@@ -162,17 +162,22 @@
   "turnOffVideo": "Выключить видео",
   "save": "Сохранить",
   "inviteTitle": "Пригласить",
-  "inviteInfo": "Введите имя, телефон и почту — мы создадим аккаунт, а код для входа придёт на эту почту.",
+  "inviteInfo": "Введите имя, телефон и почту — мы создадим аккаунт и отправим приглашение на эту почту.",
   "inviteName": "Имя",
   "inviteEmail": "Почта",
   "inviteEmailHint": "На неё придёт код для входа, например name@mail.ru",
   "invitePhone": "Телефон",
   "invitePhoneHint": "В международном формате с кодом страны, например +79161234567",
   "inviteFailed": "Не удалось пригласить. Проверьте номер и попробуйте снова.",
-  "inviteShare": "Приглашаю тебя в «Звонилку», {name}! Установи приложение и введи почту {email} — на неё придёт код для входа.",
-  "@inviteShare": {
+  "inviteSent": "Приглашение отправлено на {email}",
+  "@inviteSent": {
     "placeholders": {
-      "name": { "type": "String" },
+      "email": { "type": "String" }
+    }
+  },
+  "inviteSentNoEmail": "Аккаунт создан, но письмо не отправилось. Скажите им войти с почтой {email}",
+  "@inviteSentNoEmail": {
+    "placeholders": {
       "email": { "type": "String" }
     }
   },

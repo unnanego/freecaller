@@ -182,10 +182,52 @@ routerAdd(
     // Link both directions. Hook writes go through $app, which bypasses the API
     // rules — so this does what the old Cloud Function's arrayUnion did without
     // handing clients the ability to edit anyone's roster.
-    link($app.findRecordById("users", auth.id), invitee.id)
+    const inviter = $app.findRecordById("users", auth.id)
+    link(inviter, invitee.id)
     link(invitee, auth.id)
 
-    return e.json(200, { uid: invitee.id, email: email })
+    // Tell the invitee, from here rather than from the inviter's phone: the
+    // address IS the credential, so the one thing they must be told is which
+    // address to type — and having the app say it in the same mailbox the code
+    // will later arrive in proves the address works.
+    //
+    // Deliberately NO code in this email. A sign-in code lives 15 minutes,
+    // which is nothing next to "install an app you have not heard of"; a code
+    // that is always expired on arrival teaches people to distrust the one that
+    // isn't. They get a fresh one the moment they ask for it.
+    let emailed = false
+    try {
+      const settings = $app.settings()
+      const inviterName = String(inviter.get("displayName") || "").trim()
+
+      $app.newMailClient().send(
+        new MailerMessage({
+          from: {
+            address: settings.meta.senderAddress,
+            name: settings.meta.senderName,
+          },
+          to: [{ address: email }],
+          subject: "Вас пригласили в «Звонилку»",
+          html:
+            "<p>Здравствуйте!</p>" +
+            "<p>" +
+            (inviterName ? inviterName + " приглашает вас" : "Вас пригласили") +
+            " в «Звонилку» — приложение для звонков близким.</p>" +
+            "<p>Установите приложение и на первом экране введите этот адрес " +
+            "почты:</p>" +
+            '<p style="font-size:20px"><strong>' + email + "</strong></p>" +
+            "<p>Мы сразу пришлём сюда код для входа — пароль не нужен.</p>",
+        }),
+      )
+      emailed = true
+    } catch (err) {
+      // The account exists and the roster is linked; only the notification
+      // failed. Saying so beats failing an invite that actually succeeded —
+      // the inviter can pass the address along by hand.
+      console.log("invite: could not email " + email + ": " + err)
+    }
+
+    return e.json(200, { uid: invitee.id, email: email, emailed: emailed })
   },
   $apis.requireAuth(),
 )
