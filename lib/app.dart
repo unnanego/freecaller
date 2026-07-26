@@ -139,8 +139,17 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   /// uid -> saved-name map (device names beat server names everywhere a person
   /// is shown) and the people discovery says are on the app.
   Future<void> _loadNames() async {
-    final discovered = await _s.discovery.loadDeviceContacts();
+    List<DiscoveredContact>? loaded;
+    try {
+      loaded = await _s.discovery.loadDeviceContacts();
+    } on ContactMatchException {
+      // The backend was unreachable. Keep the names and the Siri vocabulary we
+      // already have — this runs on every resume, and rebuilding them from a
+      // failed match would drop every person from Siri until the next success.
+      return;
+    }
     if (!mounted) return;
+    final discovered = loaded;
     if (discovered == null) {
       // No consent or no permission: nothing was read, and nothing was sent.
       _syncSiriContacts();

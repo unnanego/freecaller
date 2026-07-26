@@ -40,11 +40,19 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
       });
       return;
     }
-    var all = await widget.discovery.loadDeviceContacts();
-    if (all == null) {
-      // Opened without access — prompt (or route to Settings), then retry.
-      await widget.discovery.ensureAccess();
+    List<DiscoveredContact>? all;
+    try {
       all = await widget.discovery.loadDeviceContacts();
+      if (all == null) {
+        // Opened without access — prompt (or route to Settings), then retry.
+        await widget.discovery.ensureAccess();
+        all = await widget.discovery.loadDeviceContacts();
+      }
+    } on ContactMatchException {
+      // Couldn't ask who is registered. The device contacts are still worth
+      // showing with their allow toggles — only the "on app" badge is unknown —
+      // so fall through with whatever we have rather than an empty sheet.
+      all = null;
     }
     final blocked = await widget.discovery.blockedIds();
     if (!mounted) return;

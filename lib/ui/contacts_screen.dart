@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
@@ -23,25 +25,42 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
   bool _denied = false;
   bool _needsConsent = false;
   List<DiscoveredContact> _onApp = const [];
+  Timer? _reloadDebounce;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.discovery.revision.addListener(_reload);
     _load();
   }
 
   @override
   void dispose() {
+    _reloadDebounce?.cancel();
+    widget.discovery.revision.removeListener(_reload);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
+  /// A quiet reload, coalesced. Each tap in the access sheet is its own
+  /// allow-list write, and a reload costs a full address-book read plus the
+  /// server match — so settle first and rescan once.
+  void _reload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) _load(quiet: true);
+    });
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Re-check after the user returns from the system Settings app, where they
-    // may have just granted contacts access.
-    if (state == AppLifecycleState.resumed && _denied) _load();
+    // Rescan on every return to the app, not just after a permission change.
+    // The address book is edited in another app entirely, and nothing tells us
+    // it changed — so a contact added in the Contacts app only showed up here
+    // once something else happened to trigger a load (opening the invite sheet
+    // was the one path that did), which read as "the app never rescans".
+    if (state == AppLifecycleState.resumed) _reload();
   }
 
   Future<void> _grantAccess() async {
@@ -57,8 +76,12 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
     await _grantAccess();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
+  /// [quiet] reloads in place, without the spinner: a rescan on resume or after
+  /// an allow-list change replaces a list the user is already looking at, and
+  /// blanking it to a spinner every time they come back to the app reads as the
+  /// screen reloading for no reason.
+  Future<void> _load({bool quiet = false}) async {
+    if (!quiet) setState(() => _loading = true);
     // Nothing is uploaded until the user has explicitly consented — show the
     // consent screen first (Guideline 5.1.2).
     if (!await widget.discovery.hasUploadConsent()) {
@@ -71,7 +94,17 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
       });
       return;
     }
-    final result = await widget.discovery.loadAllowedOnApp();
+    final List<DiscoveredContact>? result;
+    try {
+      result = await widget.discovery.loadAllowedOnApp();
+    } on ContactMatchException {
+      // Couldn't reach the backend. Keep whatever is already on screen: a
+      // rescan that failed must never present itself as "nobody uses the app",
+      // and this now runs on every resume, so a single dropped request would
+      // otherwise empty the list under the user.
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _loading = false;

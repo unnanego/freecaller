@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_contacts/flutter_contacts.dart' as fc;
 import 'package:phone_numbers_parser/phone_numbers_parser.dart';
 import 'package:pocketbase/pocketbase.dart';
@@ -10,6 +13,23 @@ import 'models.dart';
 /// That phone number or email address is already on the roster.
 class InviteExistsException implements Exception {
   const InviteExistsException();
+}
+
+/// The backend could not be asked which numbers are registered.
+///
+/// Distinct from "nobody matched", and the distinction matters: this used to be
+/// swallowed into an empty match map, which is indistinguishable from a roster
+/// where none of your contacts use the app. Since discovery now re-runs on every
+/// resume, one dropped request was enough to blank the Contacts list, the
+/// device-name map and the Siri vocabulary — so callers must be able to tell
+/// "found nothing" from "could not look".
+class ContactMatchException implements Exception {
+  const ContactMatchException(this.cause);
+
+  final Object cause;
+
+  @override
+  String toString() => 'ContactMatchException: $cause';
 }
 
 /// One entry from the device address book, annotated with whether the person
@@ -70,6 +90,13 @@ class ContactDiscoveryRepo {
   // Persist the set of BLOCKED device ids, so a brand-new contact defaults to
   // allowed (like WhatsApp) without us having to enumerate everyone up front.
   static const _blockedKey = 'contactAccessBlocked';
+
+  /// Bumped whenever the allow-list changes. The access sheet and the Contacts
+  /// screen are siblings in an [IndexedStack], so the screen is never rebuilt
+  /// (let alone re-run initState) when the sheet closes — without this, a
+  /// contact switched off in the sheet stayed on the Contacts list until the
+  /// app was restarted, which read as "removing access does nothing".
+  final revision = ValueNotifier<int>(0);
 
   // Whether the user has explicitly agreed to send their address-book numbers
   // to our server for matching. Discovery uploads NOTHING until this is set —
@@ -221,18 +248,30 @@ class ContactDiscoveryRepo {
     return (prefs.getStringList(_blockedKey) ?? const []).toSet();
   }
 
-  Future<void> setAllowed(String deviceId, bool allowed) async {
-    final prefs = await SharedPreferences.getInstance();
-    final blocked = (prefs.getStringList(_blockedKey) ?? const []).toSet();
-    if (allowed) {
-      blocked.remove(deviceId);
-    } else {
-      blocked.add(deviceId);
-    }
-    await prefs.setStringList(_blockedKey, blocked.toList());
+  /// Serialises the read-modify-write below. Toggling is a tap, and the sheet
+  /// does not await it: two quick taps would otherwise both read the old list
+  /// and the second write would lose the first one's change.
+  Future<void> _writes = Future.value();
+
+  Future<void> setAllowed(String deviceId, bool allowed) {
+    _writes = _writes.then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      final blocked = (prefs.getStringList(_blockedKey) ?? const []).toSet();
+      if (allowed) {
+        blocked.remove(deviceId);
+      } else {
+        blocked.add(deviceId);
+      }
+      await prefs.setStringList(_blockedKey, blocked.toList());
+      revision.value++;
+    });
+    return _writes;
   }
 
   /// Ask the backend which numbers belong to registered users → {e164: uid}.
+  ///
+  /// Throws [ContactMatchException] if the request failed, rather than reporting
+  /// an empty roster — see that class for why.
   Future<Map<String, String>> _matchRegistered(List<String> phones) async {
     try {
       final result = await _pb.send<Map<String, dynamic>>(
@@ -248,7 +287,7 @@ class ContactDiscoveryRepo {
       };
     } catch (e) {
       log('matchContacts failed', error: e);
-      return const {};
+      throw ContactMatchException(e);
     }
   }
 
