@@ -61,15 +61,24 @@ class MainActivity : FlutterActivity() {
     // Route call audio to the speaker (or back off it), using the platform's
     // own API rather than the WebRTC plugin's device switcher.
     //
-    // The plugin drives routing through AudioManager.isSpeakerphoneOn, which is
-    // deprecated since Android 12 and which several OEM builds quietly ignore
-    // once a communication device has been selected — the symptom being a
-    // speaker button that does nothing at all on those phones while working
-    // everywhere else. setCommunicationDevice is the supported replacement and
-    // is what actually moves the audio on them.
+    // This is a FALLBACK, not a competitor. The plugin drives routing through
+    // AudioManager.isSpeakerphoneOn, which is deprecated since Android 12 and
+    // which several OEM builds quietly ignore once a communication device has
+    // been selected — the symptom being a speaker button that does nothing at
+    // all on those phones while working everywhere else. setCommunicationDevice
+    // is the supported replacement and is what actually moves the audio there.
     //
-    // Returns a description of what it did, so a device that refuses can be
-    // told apart from one that was never asked.
+    // But on the phones where the plugin path DOES work, calling it as well is
+    // actively harmful: setCommunicationDevice/clearCommunicationDevice fire
+    // OnCommunicationDeviceChanged, and the plugin's own device switcher
+    // re-decides the route when it sees that — putting a Pixel straight back on
+    // the earpiece a moment after the speaker button was pressed. So we look at
+    // where the audio actually is first, and only intervene when the caller's
+    // request has not already been honoured.
+    //
+    // Returns a description of what it did, so a phone that refuses can be told
+    // apart from one that was never asked, and both from one that needed
+    // nothing.
     private fun setSpeaker(on: Boolean): String {
         val audio = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
@@ -77,6 +86,15 @@ class MainActivity : FlutterActivity() {
             @Suppress("DEPRECATION")
             audio.isSpeakerphoneOn = on
             return "legacy isSpeakerphoneOn=$on"
+        }
+
+        // The plugin ran just before us. If it already got us where we want to
+        // be, touching the route again only invites it to re-decide.
+        val current = audio.communicationDevice
+        val onSpeaker = current?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        if (on == onSpeaker) {
+            return "already ${if (on) "on" else "off"} speaker via plugin " +
+                "(current=${current?.type})"
         }
 
         val devices = audio.availableCommunicationDevices
@@ -91,7 +109,7 @@ class MainActivity : FlutterActivity() {
                 it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
         }
         if (external != null) {
-            return "left on external device (type=${'$'}{external.type})"
+            return "left on external device (type=${external.type})"
         }
 
         if (!on) {
@@ -100,7 +118,7 @@ class MainActivity : FlutterActivity() {
         }
 
         val speaker = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-            ?: return "no builtin speaker among ${'$'}{devices.map { it.type }}"
+            ?: return "no builtin speaker among ${devices.map { it.type }}"
 
         val applied = audio.setCommunicationDevice(speaker)
         return "setCommunicationDevice(speaker)=$applied"
