@@ -80,7 +80,7 @@ class CallSounds {
     await _applyContext();
     try {
       await _ringback.setReleaseMode(ReleaseMode.loop);
-      await _ringback.setVolume(0.55);
+      await _ringback.setVolume(1.0);
       await _ringback.play(AssetSource('sounds/ringback.wav'));
     } catch (e) {
       log('call sounds: ringback failed', error: e);
