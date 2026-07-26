@@ -31,14 +31,41 @@ class CallSounds {
           isSpeakerphoneOn: _speaker,
           audioMode: AndroidAudioMode.inCommunication,
           contentType: AndroidContentType.sonification,
-          usageType: AndroidUsageType.voiceCommunication,
+          // VOICE_COMMUNICATION_SIGNALLING, not VOICE_COMMUNICATION: the first
+          // is Android's usage for call-PROGRESS tones (ringback, DTMF), the
+          // second is for the call audio itself. Sharing the usage with the live
+          // WebRTC stream made the tone inaudible on a Pixel even though it was
+          // playing and holding focus — the route was right, nothing came out.
+          //
+          // It still follows the communication device, so the in-call speaker
+          // toggle continues to move it (USAGE_MEDIA could not, and
+          // NOTIFICATION_RINGTONE is the incoming-ringtone stream, which does
+          // not follow the route either). Google's own Meet/Duo plays its call
+          // tones on this usage — visible as VoiceCommunicationSignalling in
+          // `dumpsys audio` next to ours.
+          usageType: AndroidUsageType.voiceCommunicationSignalling,
           audioFocus: AndroidAudioFocus.gainTransientMayDuck,
         ),
       );
 
+  /// Apply the context to the ringback player ITSELF, not just globally.
+  ///
+  /// `AudioPlayer.global.setAudioContext` only sets the default for players
+  /// created afterwards, and both players here are field initialisers — so the
+  /// global call never reached them and they kept audioplayers' defaults. On
+  /// Android the focus request is built from the PER-PLAYER context, and the
+  /// default is USAGE_MEDIA / CONTENT_TYPE_MUSIC / AUDIOFOCUS_GAIN.
+  ///
+  /// Two consequences, both observed on a Pixel 7 Pro: the ringback played on
+  /// the media stream, which does not follow the communication device, so the
+  /// in-call speaker toggle could not move it; and the tone took audio focus
+  /// with a permanent GAIN, which hands the live WebRTC session an
+  /// AUDIOFOCUS_LOSS instead of the transient duck this asks for.
   Future<void> _applyContext() async {
+    final context = _context();
     try {
-      await AudioPlayer.global.setAudioContext(_context());
+      await AudioPlayer.global.setAudioContext(context);
+      await _ringback.setAudioContext(context);
     } catch (e) {
       log('call sounds: setAudioContext failed', error: e);
     }
@@ -92,7 +119,9 @@ class CallSounds {
   Future<void> playEnded() async {
     try {
       await Future<void>.delayed(const Duration(milliseconds: 300));
-      await AudioPlayer.global.setAudioContext(AudioContext(
+      // Same per-player rule as _applyContext: the global default does not
+      // reach a player that already exists.
+      final context = AudioContext(
         // Exclusive playback (no mixWithOthers): after a speaker call the torn-
         // down session's route lingers, and mixing into it plays silently — an
         // exclusive activation forces a fresh route so the tone is always heard.
@@ -105,7 +134,9 @@ class CallSounds {
           usageType: AndroidUsageType.notification,
           audioFocus: AndroidAudioFocus.gainTransientMayDuck,
         ),
-      ));
+      );
+      await AudioPlayer.global.setAudioContext(context);
+      await _effect.setAudioContext(context);
       await _effect.stop();
       await _effect.setVolume(1.0);
       await _effect.play(AssetSource('sounds/call_end.wav'));
