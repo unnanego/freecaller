@@ -1,7 +1,10 @@
 name: freecaller
 description: "Family VoIP caller (Звонилка) — dead-simple, accessible, voice-first."
 publish_to: "none"
-version: 0.1.0+9
+# Marketing version 1.1, 1.2, … one bump per release; the +N build number must
+# rise on EVERY store upload (both stores reject a duplicate). pubspec requires
+# three-part semver, so 1.1 is spelled 1.1.0 — the stores display it as "1.1".
+version: 1.1.0+10
 
 environment:
   sdk: ^3.12.0
