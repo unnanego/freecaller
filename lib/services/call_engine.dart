@@ -179,7 +179,15 @@ class CallEngine extends ChangeNotifier {
       await _enableMediaWhenReady();
     } catch (e) {
       log('startCall failed', error: e);
-      await _teardown(CallOutcome.failed, writeState: CallState.ended);
+      // `cancelled`, not `ended`: the doc is still `ringing` at this point and
+      // the server only allows ringing -> accepted|declined|cancelled|missed
+      // (pb_hooks/calls.pb.js). Writing `ended` here came back 400, which left
+      // the call `ringing` on the server — so a call that failed to bring media
+      // up kept the callee's phone ringing until the 45s sweep sniped it.
+      // `cancelled` is also what actually happened (the caller gave up before
+      // an answer), and it is the state that pushes the callee a cancel so the
+      // ring stops now rather than on the timeout.
+      await _teardown(CallOutcome.failed, writeState: CallState.cancelled);
       return;
     }
 
@@ -250,6 +258,10 @@ class CallEngine extends ChangeNotifier {
       return;
     }
     _accepting = true;
+    // Which terminal state is even legal below depends on how far we got: the
+    // server rejects ended-from-ringing, so a failure BEFORE the accept landed
+    // has to be written as `declined` instead.
+    var accepted = false;
     try {
       if (_session?.callId != callId) {
         final doc = await _calls.getCall(callId);
@@ -257,10 +269,12 @@ class CallEngine extends ChangeNotifier {
         _adoptIncoming(doc);
       }
       await _calls.setState(callId, CallState.accepted);
+      accepted = true;
       await _join(callId);
     } catch (e) {
       log('accept failed', error: e);
-      await _teardown(CallOutcome.failed, writeState: CallState.ended);
+      await _teardown(CallOutcome.failed,
+          writeState: accepted ? CallState.ended : CallState.declined);
     } finally {
       _accepting = false;
     }
