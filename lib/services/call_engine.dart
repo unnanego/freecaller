@@ -132,6 +132,51 @@ class CallEngine extends ChangeNotifier {
     } catch (e) {
       log('cold-start activeCalls failed', error: e);
     }
+
+    // Deliver whatever the native side raised while this engine was still
+    // booting — above all an accept. _accept() looks the call up by id and
+    // adopts it itself, so a replayed accept alone is enough to recover a ring
+    // the plugin no longer lists.
+    _callUi.replayBuffered();
+    // Broadcast delivery is asynchronous, so yield before concluding that
+    // nothing picked the call up; otherwise the recovery below races an accept
+    // that is already in flight and re-rings a call being answered.
+    await Future<void>.delayed(Duration.zero);
+
+    await _recoverMissedRing();
+  }
+
+  /// Pick up a call that is still ringing us server-side but that the native
+  /// layer can no longer account for.
+  ///
+  /// The loop above can only adopt what the plugin still holds, and on a phone
+  /// with aggressive background management that is routinely nothing: the app
+  /// is killed between the push and the answer, the user taps the ring, the app
+  /// cold-starts, and by the time Dart is up the plugin's active-call list is
+  /// empty and the accept event has already been raised. The caller keeps
+  /// ringing; the callee is looking at the home screen with no way to answer.
+  /// The call record is the only thing that survived, so ask it.
+  Future<void> _recoverMissedRing() async {
+    if (_phase != EnginePhase.idle || _accepting) return;
+    try {
+      final doc = await _calls.findRingingFor(_myUid);
+      if (doc == null || _phase != EnginePhase.idle || _accepting) return;
+      log('cold start: recovered ringing call ${doc.callId}');
+      _adoptIncoming(doc);
+      // Re-raise the native ring: adopting alone would leave the user on the
+      // home screen, because `incoming` has no in-app UI of its own — the
+      // native ring IS the incoming UI.
+      await _callUi.showIncoming(CallDisplay(
+        callId: doc.callId,
+        peerName: doc.callerName,
+        peerPhone: doc.callerPhone,
+        isVideo: doc.isVideo,
+      ));
+    } catch (e) {
+      // Best-effort, exactly like the loop above: a phone that cannot reach the
+      // server on boot must still finish signing in.
+      log('cold-start ring recovery failed', error: e);
+    }
   }
 
   // ---------------------------------------------------------------- outgoing

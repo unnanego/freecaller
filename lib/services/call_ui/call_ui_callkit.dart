@@ -20,21 +20,55 @@ class CallKitCallUi implements CallUi {
 
   final _events = StreamController<CallUiEvent>.broadcast();
 
+  /// Events raised before anything subscribed. The native ring can be answered
+  /// while the Flutter engine is still booting — on a phone that kills the app
+  /// between the push and the answer, that is the *normal* case, not an edge
+  /// one — and a broadcast controller drops whatever it emits with no listener
+  /// attached. Hold those until [replayBuffered].
+  final _buffered = <CallUiEvent>[];
+
+  /// Set once [replayBuffered] has run: from then on the engine is listening
+  /// and every event goes straight out.
+  var _replayed = false;
+
   @override
   Stream<CallUiEvent> get events => _events.stream;
+
+  @override
+  void replayBuffered() {
+    _replayed = true;
+    if (_buffered.isEmpty) return;
+    final queued = List<CallUiEvent>.of(_buffered);
+    _buffered.clear();
+    for (final event in queued) {
+      log('callkit: replaying buffered ${event.type} (call=${event.callId})');
+      _emit(event);
+    }
+  }
+
+  void _emit(CallUiEvent event) {
+    if (!_replayed) {
+      // Only the last few matter (a ring produces at most an accept/decline
+      // pair) and this must never grow without bound if nothing ever listens.
+      if (_buffered.length >= 16) _buffered.removeAt(0);
+      _buffered.add(event);
+      return;
+    }
+    if (!_events.isClosed) _events.add(event);
+  }
 
   void _onEvent(CallEvent? event) {
     switch (event) {
       case CallEventActionCallAccept(:final callKitParams):
-        _events.add(CallUiEvent(CallUiEventType.accept, callId: callKitParams.id));
+        _emit(CallUiEvent(CallUiEventType.accept, callId: callKitParams.id));
       case CallEventActionCallDecline(:final callKitParams):
-        _events.add(CallUiEvent(CallUiEventType.decline, callId: callKitParams.id));
+        _emit(CallUiEvent(CallUiEventType.decline, callId: callKitParams.id));
       case CallEventActionCallEnded(:final callKitParams):
-        _events.add(CallUiEvent(CallUiEventType.ended, callId: callKitParams.id));
+        _emit(CallUiEvent(CallUiEventType.ended, callId: callKitParams.id));
       case CallEventActionCallTimeout(:final id):
-        _events.add(CallUiEvent(CallUiEventType.timeout, callId: id));
+        _emit(CallUiEvent(CallUiEventType.timeout, callId: id));
       case CallEventActionCallToggleAudioSession(:final isActive):
-        _events.add(CallUiEvent(
+        _emit(CallUiEvent(
           isActive
               ? CallUiEventType.audioSessionActivated
               : CallUiEventType.audioSessionDeactivated,
@@ -49,7 +83,7 @@ class CallKitCallUi implements CallUi {
   Future<void> _refreshVoipToken() async {
     final token = await voipToken();
     if (token != null) {
-      _events.add(CallUiEvent(
+      _emit(CallUiEvent(
         CallUiEventType.voipTokenUpdated,
         extra: {'token': token},
       ));
@@ -132,11 +166,13 @@ class CallKitCallUi implements CallUi {
   @override
   Future<void> dismiss(String callId) async {
     _pluginCalls.remove(callId);
+    // Strictly by id. This used to follow up with endAllCalls() to guarantee
+    // the full-screen activity and ringtone went away, but a cancel push is
+    // only ordered relative to its own call: on a slow link the cancel for the
+    // call the caller just gave up on routinely lands *after* the ring for
+    // their redial, and endAllCalls() killed that fresh ring. Tearing down the
+    // activity for a matching id is FreecallerMessagingService's job now.
     await FlutterCallkitIncoming.endCall(callId);
-    // endCall alone can leave the full-screen incoming activity + ringtone
-    // running when the cancel is handled in a background isolate; endAllCalls
-    // works off the shared/persisted call list and also tears those down.
-    await FlutterCallkitIncoming.endAllCalls();
   }
 
   @override

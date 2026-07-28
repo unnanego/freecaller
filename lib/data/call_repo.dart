@@ -80,6 +80,35 @@ class CallRepo {
     }
   }
 
+  /// The call currently ringing [uid], straight from the server.
+  ///
+  /// Cold-start recovery depends on this. The native ring is the only incoming
+  /// UI there is, and everything that knows about it — the plugin's active-call
+  /// list, the accept event — lives in a process the OS is free to kill between
+  /// the push arriving and the user answering. The call record does not, so it
+  /// is the one place that still knows someone is ringing after the app comes
+  /// back from nothing.
+  ///
+  /// Only calls still inside the ring window are returned: `ringing` is cleared
+  /// by the caller's own timer or, if that never happens, by a sweep that runs
+  /// on a coarser one-minute cron, so a record can read `ringing` for up to a
+  /// minute after nobody is waiting on it any more.
+  Future<CallDoc?> findRingingFor(String uid) async {
+    // uid is the server-issued auth id, never free text.
+    final page = await _calls.getList(
+      page: 1,
+      perPage: 1,
+      filter: "calleeId = '$uid' && state = 'ringing'",
+      sort: '-created',
+    );
+    if (page.items.isEmpty) return null;
+    final doc = CallDoc.fromRecord(page.items.first);
+    final created = doc.createdAt;
+    if (created == null) return null;
+    final age = DateTime.now().toUtc().difference(created.toUtc());
+    return age < Config.ringTimeout ? doc : null;
+  }
+
   /// Live view of one call: emits the current value on listen, then on every
   /// change, and `null` once the record is gone.
   Stream<CallDoc?> watchCall(String callId) {

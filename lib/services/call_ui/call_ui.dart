@@ -41,6 +41,13 @@ enum EndReason { local, remote, declined, missed, failed }
 abstract class CallUi {
   Stream<CallUiEvent> get events;
 
+  /// Re-delivers events the native side raised before anything subscribed to
+  /// [events]. On a cold start the user can tap Answer seconds before the
+  /// Flutter engine finishes booting, and that accept would otherwise land on a
+  /// stream with no listener and be dropped. Call once, right after
+  /// subscribing.
+  void replayBuffered();
+
   /// Shows the native incoming-call UI. On iOS this is normally done by the
   /// native PushKit handler before Dart is even running; this method exists
   /// for the Android FCM background isolate (and web later).
