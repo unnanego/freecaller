@@ -2,6 +2,15 @@
   "@@locale": "ru",
   "appTitle": "Звонилка",
   "activationTitle": "Активация",
+  "activationStep": "Шаг {step} из 2",
+  "@activationStep": {
+    "description": "Step indicator on the two-step sign-in screen",
+    "placeholders": {
+      "step": {
+        "type": "int"
+      }
+    }
+  },
   "activationSubmit": "Активировать",
   "activationInvalid": "Неверный или использованный код",
   "activationNetworkError": "Нет связи. Попробуйте ещё раз",
@@ -69,7 +78,7 @@
   "callEnded": "Звонок завершён",
   "voiceCall": "Обычный звонок",
   "videoCall": "Видеозвонок",
-  "cancel": "Назад",
+  "cancel": "Отмена",
   "whomToCall": "Как позвонить {name}?",
   "@whomToCall": {
     "placeholders": {
@@ -173,14 +182,18 @@
   "inviteSent": "Приглашение отправлено на {email}",
   "@inviteSent": {
     "placeholders": {
-      "email": { "type": "String" }
+      "email": {
+        "type": "String"
+      }
     }
   },
   "inviteExists": "У этого номера или почты уже есть аккаунт",
   "inviteSentNoEmail": "Аккаунт создан, но письмо не отправилось. Скажите им войти с почтой {email}",
   "@inviteSentNoEmail": {
     "placeholders": {
-      "email": { "type": "String" }
+      "email": {
+        "type": "String"
+      }
     }
   },
   "signInEmailLabel": "Ваша почта для входа",
@@ -189,7 +202,9 @@
   "signInEmailShare": "Моя почта для входа в «Звонилку»: {email}",
   "@signInEmailShare": {
     "placeholders": {
-      "email": { "type": "String" }
+      "email": {
+        "type": "String"
+      }
     }
   },
   "signOutConfirmTitle": "Выйти?",
@@ -201,6 +216,5 @@
   "deleteAccountConfirmTitle": "Удалить аккаунт?",
   "deleteAccountConfirmBody": "Ваш профиль, контакты и история звонков будут удалены безвозвратно. Отменить это действие нельзя.",
   "deleteAccountConfirm": "Удалить",
-  "deleteAccountFailed": "Не удалось удалить аккаунт. Попробуйте ещё раз.",
-  "cancel": "Отмена"
+  "deleteAccountFailed": "Не удалось удалить аккаунт. Попробуйте ещё раз."
 }
