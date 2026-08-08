@@ -5,21 +5,29 @@ import '../data/contact_discovery.dart';
 import '../data/models.dart';
 import 'theme/modernist.dart';
 
-/// Call history. Missed calls render in accent (red). Tapping a row calls that
-/// person back in the row's mode.
+/// Call history, both directions. Missed calls render in accent (red). Tapping
+/// a row calls that person back in the row's mode.
 ///
-/// First pass: incoming calls only (the existing query). Outgoing history needs
-/// a small schema/index addition and lands next.
+/// "Missed" is only ever said of an INCOMING call. A call you placed that went
+/// unanswered also ends up in `CallState.missed` — the callee's ring timed out —
+/// but calling that "missed" on the caller's own screen would blame them for
+/// not answering their own call, and colouring it red would put a permanent
+/// alarm on the list of people who were simply out.
 class RecentsScreen extends StatefulWidget {
   const RecentsScreen({
     super.key,
     required this.recents,
     required this.names,
+    required this.myUid,
     required this.onCall,
   });
 
   final List<CallDoc> recents;
   final ContactNames names;
+
+  /// Which side of each call we were on — the only thing that distinguishes an
+  /// incoming record from an outgoing one.
+  final String myUid;
   final void Function(Contact contact, {required bool video}) onCall;
 
   @override
@@ -33,7 +41,9 @@ class _RecentsScreenState extends State<RecentsScreen> {
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
     final rows = widget.recents
-        .where((c) => !_missedOnly || c.state == CallState.missed)
+        .where((c) =>
+            !_missedOnly ||
+            (c.state == CallState.missed && c.callerId != widget.myUid))
         .toList();
     return SafeArea(
       bottom: false,
@@ -66,6 +76,7 @@ class _RecentsScreenState extends State<RecentsScreen> {
                     itemBuilder: (_, i) => _RecentRow(
                       call: rows[i],
                       names: widget.names,
+                      myUid: widget.myUid,
                       onCall: widget.onCall,
                     ),
                   ),
@@ -118,19 +129,54 @@ class _RecentsScreenState extends State<RecentsScreen> {
 }
 
 class _RecentRow extends StatelessWidget {
-  const _RecentRow({required this.call, required this.names, required this.onCall});
+  const _RecentRow({
+    required this.call,
+    required this.names,
+    required this.myUid,
+    required this.onCall,
+  });
 
   final CallDoc call;
   final ContactNames names;
+  final String myUid;
   final void Function(Contact contact, {required bool video}) onCall;
 
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
-    final missed = call.state == CallState.missed;
-    // Prefer the name from the user's own address book over the server name.
-    final name = names.resolve(call.callerId, call.callerName);
-    final dir = missed ? loc.dirMissed : loc.dirIncoming;
+    final outgoing = call.callerId == myUid;
+    // Only an incoming call can be missed — see the note on RecentsScreen.
+    final missed = call.state == CallState.missed && !outgoing;
+    // The same state on the other side of a call: we rang and nobody picked up.
+    // Worth saying plainly — "did they answer?" is the first thing you want
+    // from your own call list — but it is not an alarm the way a missed call
+    // is, so it gets its own wording and icon rather than the accent colour.
+    //
+    // Only `missed` counts. `cancelled` also ends up here when the caller gave
+    // up first, and it is additionally what a failed media connect writes, so
+    // labelling that "no answer" would blame the callee for our own failure.
+    final noAnswer = outgoing && call.state == CallState.missed;
+
+    // The peer is whichever side we were not. The record carries the CALLER's
+    // name and phone, so for an outgoing call there is nothing stored about the
+    // person we rang and the address book has to supply it — which it can,
+    // because you can only place a call to someone the Contacts screen matched
+    // there in the first place.
+    final peerUid = outgoing ? call.calleeId : call.callerId;
+    final resolved =
+        names.resolve(peerUid, outgoing ? '' : call.callerName).trim();
+    final name = resolved.isEmpty ? loc.recentsUnknownPeer : resolved;
+    // Likewise: no stored callee phone. It only feeds the native call screen's
+    // subtitle, so an empty one costs nothing.
+    final peerPhone = outgoing ? '' : call.callerPhone;
+
+    final dir = missed
+        ? loc.dirMissed
+        : noAnswer
+            ? loc.dirNoAnswer
+            : outgoing
+                ? loc.dirOutgoing
+                : loc.dirIncoming;
     final kind = call.isVideo ? loc.kindVideo : loc.kindVoice;
     final nameColor = missed ? Mod.accent : Mod.text;
 
@@ -139,7 +185,7 @@ class _RecentRow extends StatelessWidget {
       label: '$name. $dir · $kind. ${loc.callContact(name)}',
       child: InkWell(
         onTap: () => onCall(
-          Contact(uid: call.callerId, displayName: name, phone: call.callerPhone),
+          Contact(uid: peerUid, displayName: name, phone: peerPhone),
           video: call.isVideo,
         ),
         child: Container(
@@ -161,15 +207,41 @@ class _RecentRow extends StatelessWidget {
                       const SizedBox(height: 3),
                       Row(
                         children: [
+                          // Direction at a glance; the kind stays in the text
+                          // beside it. Separated by CONTRAST rather than hue:
+                          // the palette is near-mono red-on-off-white, and the
+                          // one saturated colour it has is already spoken for
+                          // by "missed". Dark = someone called you, light =
+                          // you called them, red = you missed one. Contrast
+                          // also survives colour-blindness, which hue would
+                          // not, and the row's text says the direction anyway.
+                          // Colour carries the direction; the arrow shape
+                          // repeats it for anyone who cannot separate the hues.
                           Icon(
-                            call.isVideo ? Icons.videocam : Icons.call,
-                            size: 13,
-                            color: missed ? Mod.accent : Mod.neutral600,
+                            missed
+                                ? Icons.call_missed
+                                : noAnswer
+                                    ? Icons.call_missed_outgoing
+                                    : outgoing
+                                        ? Icons.call_made
+                                        : Icons.call_received,
+                            // 13 was too small to read an arrow's direction.
+                            size: 16,
+                            color: missed || noAnswer
+                                ? Mod.callUnanswered
+                                : outgoing
+                                    ? Mod.callOutgoing
+                                    : Mod.callIncoming,
                           ),
                           const SizedBox(width: 5),
+                          // The label stays grey except when unanswered: three
+                          // coloured labels down the list would compete with
+                          // the names, and the arrow already carries direction.
                           Text('$dir · $kind',
                               style: Mod.meta(
-                                  color: missed ? Mod.accent : Mod.neutral600)),
+                                  color: missed || noAnswer
+                                      ? Mod.callUnanswered
+                                      : Mod.neutral600)),
                         ],
                       ),
                     ],

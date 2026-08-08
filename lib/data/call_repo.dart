@@ -181,8 +181,9 @@ class CallRepo {
     return controller.stream;
   }
 
-  /// Recent calls where [uid] was the callee — used for the missed-call banner.
-  Stream<List<CallDoc>> watchRecentIncoming(String uid, {int limit = 10}) {
+  /// Recent calls in BOTH directions — every call [uid] took part in, newest
+  /// first. Also feeds the missed-call banner, which filters for itself.
+  Stream<List<CallDoc>> watchRecent(String uid, {int limit = 10}) {
     late final StreamController<List<CallDoc>> controller;
     UnsubscribeFunc? unsub;
     var closed = false;
@@ -194,7 +195,7 @@ class CallRepo {
           page: 1,
           perPage: limit,
           // uid is the server-issued auth id, never free text.
-          filter: "calleeId = '$uid'",
+          filter: "calleeId = '$uid' || callerId = '$uid'",
           sort: '-created',
         );
         if (!closed) {
@@ -213,7 +214,10 @@ class CallRepo {
           unsub = await _calls.subscribe(
             '*',
             (_) => refresh(),
-            filter: "calleeId = '$uid'",
+            // Both directions, matching the query above — subscribing to
+            // incoming only would leave a call you placed missing from the
+            // list until something else refreshed it.
+            filter: "calleeId = '$uid' || callerId = '$uid'",
           );
         } catch (_) {
           // Realtime unavailable: the list just won't live-update.

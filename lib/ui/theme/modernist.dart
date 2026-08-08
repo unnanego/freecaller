@@ -12,6 +12,18 @@ abstract final class Mod {
   static const accent = Color(0xFFEC3013);
   static const accent600 = Color(0xFFDD2B0F);
   static const accent700 = Color(0xFFAE1800);
+  // ── Call direction ──────────────────────────────────────────────────────
+  // The only hues in an otherwise near-mono palette, and deliberately so: a
+  // recents list is scanned rather than read, and direction is the thing being
+  // scanned for. Both are darkened well past their usual web values to hold
+  // contrast against the off-white background.
+  static const callIncoming = Color(0xFF1B7F3B);
+  static const callOutgoing = Color(0xFF1A5FC4);
+
+  /// Unanswered, in either direction — the brand accent rather than a fourth
+  /// hue, since "you did not connect" is exactly what it already means here.
+  static const callUnanswered = accent;
+
   static const neutral500 = Color(0xFF9B9797);
   static const neutral600 = Color(0xFF7D7979);
   static const neutral700 = Color(0xFF605D5D);

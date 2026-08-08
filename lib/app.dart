@@ -301,7 +301,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       });
     }
 
-    _recentSub = _s.calls.watchRecentIncoming(widget.uid).listen((recent) {
+    _recentSub = _s.calls.watchRecent(widget.uid).listen((recent) {
       setState(() => _recents = recent);
     }, onError: (Object e) => log('recent calls', error: e));
   }

@@ -125,10 +125,18 @@
   "filterMissed": "ПРОПУЩЕННЫЕ",
   "dirIncoming": "Входящий",
   "dirOutgoing": "Исходящий",
+  "dirNoAnswer": "Нет ответа",
+  "@dirNoAnswer": {
+    "description": "Recents label for an outgoing call the other side never picked up"
+  },
   "dirMissed": "Пропущенный",
   "kindVoice": "Звук",
   "kindVideo": "Видео",
   "recentsEmpty": "Пока нет звонков.",
+  "recentsUnknownPeer": "Без имени",
+  "@recentsUnknownPeer": {
+    "description": "Shown in Recents when an outgoing call's peer is not in the address book"
+  },
   "accessKicker": "СИСТЕМА · ДОСТУП",
   "accessTitle": "Какие контакты видит Звонилка",
   "accessInfo": "Разрешите доступ только к выбранным контактам. Разрешённые контакты, у кого есть Звонилка, появятся в списке.",

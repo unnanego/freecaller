@@ -52,6 +52,7 @@ class _MainShellState extends State<MainShell> {
           RecentsScreen(
             recents: widget.recents,
             names: widget.names,
+            myUid: widget.profile.uid,
             onCall: widget.onCall,
           ),
           ContactsScreen(discovery: widget.discovery, onCall: widget.onCall),
