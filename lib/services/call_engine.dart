@@ -285,7 +285,27 @@ class CallEngine extends ChangeNotifier {
       return;
     }
     try {
-      await _calls.setState(callId, CallState.declined);
+      // Only a RINGING call can be declined. This path is also reached when the
+      // native UI reports `ended` for a call the PEER already ended — iOS
+      // surfaces a declined ring and a remote hangup as the same
+      // CXEndCallAction — and `declined` is illegal from every state but
+      // `ringing` (pb_hooks/calls.pb.js; note even `accepted` only allows
+      // `ended`). Writing blind produced a 400 on each remote hangup: harmless
+      // to the user, since the call was over either way, but a rejected write
+      // on a path that believed it had succeeded.
+      // Skip the write only when we POSITIVELY know the call has moved on. If
+      // the read itself fails (offline is the common case here) fall through
+      // and try anyway: a decline that never reaches the caller leaves them
+      // ringing to the timeout, which is worse than a rejected write.
+      CallDoc? doc;
+      try {
+        doc = await _calls.getCall(callId);
+      } catch (_) {
+        doc = null;
+      }
+      if (doc == null || doc.state == CallState.ringing) {
+        await _calls.setState(callId, CallState.declined);
+      }
     } catch (e) {
       log('decline write failed', error: e);
     }
