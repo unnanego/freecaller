@@ -20,6 +20,7 @@ class ContactAccessSheet extends StatefulWidget {
 class _ContactAccessSheetState extends State<ContactAccessSheet> {
   bool _loading = true;
   bool _needsConsent = false;
+  ContactAccess _access = ContactAccess.granted;
   List<DiscoveredContact> _all = const [];
   Set<String> _blocked = {};
 
@@ -40,13 +41,18 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
       });
       return;
     }
+    var access = ContactAccess.granted;
     List<DiscoveredContact>? all;
     try {
       all = await widget.discovery.loadDeviceContacts();
       if (all == null) {
-        // Opened without access — prompt (or route to Settings), then retry.
-        await widget.discovery.ensureAccess();
-        all = await widget.discovery.loadDeviceContacts();
+        // Opened without access. Ask the OS — once — and take the answer as
+        // given: a refusal shows the explanation below, never a redirect into
+        // Settings (App Store 5.1.1).
+        access = await widget.discovery.requestAccess();
+        if (access == ContactAccess.granted) {
+          all = await widget.discovery.loadDeviceContacts();
+        }
       }
     } on ContactMatchException {
       // Couldn't ask who is registered. The device contacts are still worth
@@ -59,6 +65,7 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
     setState(() {
       _loading = false;
       _needsConsent = false;
+      _access = access;
       _all = all ?? const [];
       _blocked = blocked;
     });
@@ -120,6 +127,8 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
                   ? const Center(child: CircularProgressIndicator(color: Mod.accent))
                   : _needsConsent
                       ? _consentBody(loc)
+                      : _access != ContactAccess.granted
+                      ? _noAccessBody(loc)
                       : ListView.builder(
                           padding: EdgeInsets.zero,
                           itemCount: _all.length,
@@ -130,7 +139,8 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
                           ),
                         ),
             ),
-            if (!_needsConsent) _doneButton(loc, allowedCount),
+            if (!_needsConsent && _access == ContactAccess.granted)
+              _doneButton(loc, allowedCount),
           ],
         ),
       ),
@@ -161,6 +171,48 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
                     const EdgeInsets.symmetric(horizontal: Mod.s6, vertical: 16),
                 child: ExcludeSemantics(
                   child: Text(loc.contactsConsentAgree, style: Mod.button()),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Shown in place of the list when the address book can't be read. There is
+  /// nothing to toggle, so it says why and — when the OS has stopped asking —
+  /// offers a Settings link the user may take or leave. It never opens Settings
+  /// on its own (App Store 5.1.1).
+  Widget _noAccessBody(AppLocalizations loc) {
+    final blocked = _access == ContactAccess.blocked;
+    return Padding(
+      padding: const EdgeInsets.all(Mod.s6),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.shield_outlined, color: Mod.neutral500, size: 44),
+          const SizedBox(height: Mod.s4),
+          Text(
+            blocked ? loc.contactsAccessBlocked : loc.contactsPermissionInfo,
+            textAlign: TextAlign.center,
+            style: Mod.body(),
+          ),
+          const SizedBox(height: Mod.s6),
+          Semantics(
+            button: true,
+            label: blocked ? loc.openDeviceSettings : loc.continueAction,
+            child: InkWell(
+              onTap: blocked ? widget.discovery.openSystemSettings : _load,
+              child: Container(
+                color: Mod.accent,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: Mod.s6, vertical: 16),
+                child: ExcludeSemantics(
+                  child: Text(
+                    blocked ? loc.openDeviceSettings : loc.continueAction,
+                    style: Mod.button(),
+                  ),
                 ),
               ),
             ),

@@ -24,6 +24,9 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
   bool _loading = true;
   bool _denied = false;
   bool _needsConsent = false;
+  /// Only consulted while [_denied]: decides whether the CTA can still ask the
+  /// OS, or has nothing to offer but a link to Settings.
+  ContactAccess _access = ContactAccess.denied;
   List<DiscoveredContact> _onApp = const [];
   Timer? _reloadDebounce;
 
@@ -63,8 +66,27 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
     if (state == AppLifecycleState.resumed) _reload();
   }
 
-  Future<void> _grantAccess() async {
-    if (await widget.discovery.ensureAccess()) _load();
+  /// Ask the OS for contacts access, once, and accept the answer.
+  ///
+  /// Nothing happens on a refusal beyond remembering it: no second prompt, and
+  /// above all no bounce into Settings (App Store 5.1.1 — a permission prompt is
+  /// the user's decision to make). The CTA below then explains what the list
+  /// needs and offers a Settings link they can choose to tap.
+  Future<void> _requestAccess() async {
+    final access = await widget.discovery.requestAccess();
+    if (!mounted) return;
+    if (access == ContactAccess.granted) {
+      await _load();
+      return;
+    }
+    // [_denied] too, or the body falls through to the list and an empty list
+    // reads as "none of your contacts use the app" — when the truth is that we
+    // can't look.
+    setState(() {
+      _access = access;
+      _denied = true;
+      _onApp = const [];
+    });
   }
 
   /// The user tapped the consent button: record their agreement to upload
@@ -73,7 +95,7 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
     await widget.discovery.grantUploadConsent();
     if (!mounted) return;
     setState(() => _needsConsent = false);
-    await _grantAccess();
+    await _requestAccess();
   }
 
   /// [quiet] reloads in place, without the spinner: a rescan on resume or after
@@ -105,11 +127,16 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
       if (mounted) setState(() => _loading = false);
       return;
     }
+    // A null result means access is missing; which CTA to show depends on
+    // whether the OS is still willing to ask.
+    final access =
+        result == null ? await widget.discovery.accessStatus() : ContactAccess.granted;
     if (!mounted) return;
     setState(() {
       _loading = false;
       _needsConsent = false;
       _denied = result == null;
+      _access = access;
       _onApp = result ?? const [];
     });
   }
@@ -233,8 +260,11 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
                 textAlign: TextAlign.center, style: Mod.body()),
             const SizedBox(height: Mod.s6),
             _PrimaryButton(
+              // Neutral wording, deliberately: the OS prompt follows this
+              // button, and a pre-permission screen must explain rather than
+              // campaign (App Store 5.1.1).
               label: loc.contactsConsentAgree,
-              icon: Icons.check,
+              icon: Icons.arrow_forward,
               onTap: _consentAndLoad,
             ),
           ],
@@ -243,7 +273,15 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
     );
   }
 
+  /// What the list needs in order to have anything in it.
+  ///
+  /// Two shapes, and the difference is the whole point of App Store 5.1.1: while
+  /// the OS is still willing to prompt, the button asks it — labelled neutrally,
+  /// because a pre-permission button must not lobby for a yes. Once the answer
+  /// is settled, there is nothing left to ask and the screen says so, with a
+  /// link to Settings the user can take or ignore.
   Widget _permissionCta(AppLocalizations loc) {
+    final blocked = _access == ContactAccess.blocked;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(Mod.s6),
@@ -252,10 +290,23 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
           children: [
             const Icon(Icons.shield_outlined, color: Mod.neutral500, size: 48),
             const SizedBox(height: Mod.s4),
-            Text(loc.contactsPermissionInfo,
-                textAlign: TextAlign.center, style: Mod.body()),
+            Text(
+              blocked ? loc.contactsAccessBlocked : loc.contactsPermissionInfo,
+              textAlign: TextAlign.center,
+              style: Mod.body(),
+            ),
             const SizedBox(height: Mod.s6),
-            _PrimaryButton(label: loc.grantAccess, icon: Icons.check, onTap: _grantAccess),
+            blocked
+                ? _PrimaryButton(
+                    label: loc.openDeviceSettings,
+                    icon: Icons.settings_outlined,
+                    onTap: widget.discovery.openSystemSettings,
+                  )
+                : _PrimaryButton(
+                    label: loc.continueAction,
+                    icon: Icons.arrow_forward,
+                    onTap: _requestAccess,
+                  ),
           ],
         ),
       ),

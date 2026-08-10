@@ -32,6 +32,19 @@ class ContactMatchException implements Exception {
   String toString() => 'ContactMatchException: $cause';
 }
 
+/// Whether the app may read the address book, and if not, whether asking again
+/// is even possible.
+enum ContactAccess {
+  granted,
+
+  /// Not granted, but the OS will still show a prompt.
+  denied,
+
+  /// Not granted and the OS will not ask again — only the user, in Settings,
+  /// can change this.
+  blocked,
+}
+
 /// One entry from the device address book, annotated with whether the person
 /// is a registered Freecaller user.
 class DiscoveredContact {
@@ -149,21 +162,35 @@ class ContactDiscoveryRepo {
     }
   }
 
-  /// Requests contacts access. If the OS won't prompt again (already decided),
-  /// opens the app's Settings page so the user can flip it on. Returns whether
-  /// access is granted now.
-  Future<bool> ensureAccess() async {
-    final status = await fc.FlutterContacts.permissions.request(fc.PermissionType.read);
-    if (status == fc.PermissionStatus.granted ||
-        status == fc.PermissionStatus.limited) {
-      return true;
-    }
-    if (status == fc.PermissionStatus.permanentlyDenied ||
-        status == fc.PermissionStatus.restricted) {
-      await fc.FlutterContacts.permissions.openSettings();
-    }
-    return false;
-  }
+  /// Where contacts access stands, without prompting for anything.
+  Future<ContactAccess> accessStatus() async =>
+      _access(await fc.FlutterContacts.permissions.check(fc.PermissionType.read));
+
+  /// Asks the OS for contacts access, and does nothing else.
+  ///
+  /// Deliberately nothing else: this used to open the app's page in Settings
+  /// when the OS said it wouldn't ask again, and on iOS a single "Don't Allow"
+  /// IS that state — so refusing the prompt bounced the user straight into
+  /// Settings, which App Store review (rightly) reads as pushing them to say
+  /// yes. A no is taken as a no; [openSystemSettings] exists for when the user
+  /// asks for it themselves.
+  Future<ContactAccess> requestAccess() async =>
+      _access(await fc.FlutterContacts.permissions.request(fc.PermissionType.read));
+
+  /// Opens this app's page in the system Settings. Only ever call this from a
+  /// control the user has just tapped for that purpose.
+  Future<void> openSystemSettings() =>
+      fc.FlutterContacts.permissions.openSettings();
+
+  ContactAccess _access(fc.PermissionStatus status) => switch (status) {
+        // iOS "limited" (the user picked specific contacts) is access.
+        fc.PermissionStatus.granted || fc.PermissionStatus.limited =>
+          ContactAccess.granted,
+        fc.PermissionStatus.permanentlyDenied ||
+        fc.PermissionStatus.restricted =>
+          ContactAccess.blocked,
+        _ => ContactAccess.denied,
+      };
 
   /// Reads the device address book and annotates each contact with on-app
   /// status. Returns null if the user hasn't consented to uploading numbers or
