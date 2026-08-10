@@ -60,12 +60,23 @@ class CallKitCallUi implements CallUi {
   void _onEvent(CallEvent? event) {
     switch (event) {
       case CallEventActionCallAccept(:final callKitParams):
+        // Android: the ring this accept belongs to was almost certainly raised
+        // by the FCM background isolate, whose CallKitCallUi is a different
+        // object from this one — so this is where we learn the call exists.
+        // Without it [end] has nothing to end (see [_pluginCalls]).
+        if (Platform.isAndroid) _pluginCalls.add(callKitParams.id);
         _emit(CallUiEvent(CallUiEventType.accept, callId: callKitParams.id));
       case CallEventActionCallDecline(:final callKitParams):
+        _pluginCalls.remove(callKitParams.id);
         _emit(CallUiEvent(CallUiEventType.decline, callId: callKitParams.id));
       case CallEventActionCallEnded(:final callKitParams):
+        // The native side has already torn this one down — forget it, or the
+        // teardown that follows would broadcast another end and be told about
+        // it again, round and round.
+        _pluginCalls.remove(callKitParams.id);
         _emit(CallUiEvent(CallUiEventType.ended, callId: callKitParams.id));
       case CallEventActionCallTimeout(:final id):
+        _pluginCalls.remove(id);
         _emit(CallUiEvent(CallUiEventType.timeout, callId: id));
       case CallEventActionCallToggleAudioSession(:final isActive):
         _emit(CallUiEvent(
@@ -121,9 +132,22 @@ class CallKitCallUi implements CallUi {
         ),
       );
 
-  // Calls registered with the native plugin. Android outgoing calls are NOT
-  // registered (see startOutgoing), so later plugin calls must be skipped
-  // for them.
+  // Native calls we believe are still live. Android outgoing calls are NOT
+  // registered with the plugin (see startOutgoing), so later plugin calls must
+  // be skipped for them.
+  //
+  // Filling this from showIncoming alone was wrong on Android, and wrong in the
+  // ordinary case rather than an exotic one: a ring that arrives while the app
+  // is backgrounded or dead is raised from the FCM background isolate, which
+  // has its own CallKitCallUi instance and its own copy of this set. Every call
+  // answered that way was therefore unknown to the instance the engine holds,
+  // so [end] skipped FlutterCallkitIncoming.endCall — and the self-managed
+  // Telecom call stayed ACTIVE after hang-up. The phone went on believing it
+  // was in a call: other apps refused to place one, the ongoing-call foreground
+  // service never stopped, and Telecom kept ownership of the audio route. So it
+  // is also filled from the native accept event and the plugin's own
+  // active-call list, and emptied as soon as the native side says a call is
+  // gone.
   final _pluginCalls = <String>{};
 
   @override
@@ -178,6 +202,12 @@ class CallKitCallUi implements CallUi {
   @override
   Future<List<CallDisplay>> activeCalls() async {
     final calls = await FlutterCallkitIncoming.activeCalls();
+    // Cold start: these are live natively but were registered by a process (or
+    // an isolate) that is gone. Adopt them so the reconciliation in
+    // CallEngine.init can actually end the dead ones.
+    if (Platform.isAndroid) {
+      _pluginCalls.addAll(calls.map((call) => call.id));
+    }
     return [
       for (final call in calls)
         CallDisplay(
@@ -187,6 +217,25 @@ class CallKitCallUi implements CallUi {
           isVideo: call.type == 1,
         ),
     ];
+  }
+
+  @override
+  Future<void> endStaleCalls(String keepCallId) async {
+    // Android only, and deliberately so. An answered call there is a
+    // self-managed Telecom call; one that was never disconnected leaves the
+    // whole PHONE in a call — other apps refuse to dial, and Telecom keeps
+    // ownership of the audio route, so the speaker button does nothing for
+    // every call that follows, incoming or outgoing. iOS ends every call
+    // CallKit holds on each teardown (see [end]) so it has no equivalent
+    // leftover, and its active-call list can report an id in a different case
+    // than we registered it — a sweep there could hang up the call being
+    // answered.
+    if (!Platform.isAndroid) return;
+    for (final call in await activeCalls()) {
+      if (call.callId == keepCallId) continue;
+      log('ending stale native call ${call.callId}');
+      await dismiss(call.callId);
+    }
   }
 
   @override

@@ -1,11 +1,15 @@
 package com.unnanego.freecaller
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
+import android.telecom.CallAudioState
+import android.util.Log
+import com.hiennv.flutter_callkit_incoming.CallkitConnection
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -14,6 +18,23 @@ class MainActivity : FlutterActivity() {
     private var wifiLock: WifiManager.WifiLock? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
+    companion object {
+        // Audio routing is the one thing here that can only be diagnosed on the
+        // phone that misbehaves, and Dart's log() is compiled out of release
+        // builds — so these go through android.util.Log, which a release build
+        // still emits. `adb logcat -s FreecallerAudio` during one call says
+        // exactly which branch ran and where the audio actually went.
+        private const val AUDIO_TAG = "FreecallerAudio"
+
+        private val EXTERNAL_TYPES = setOf(
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+        )
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "freecaller/call_locks")
@@ -21,9 +42,14 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "acquire" -> { acquireLocks(); result.success(null) }
                     "release" -> { releaseLocks(); result.success(null) }
-                    "setSpeaker" -> result.success(
-                        setSpeaker(call.argument<Boolean>("on") ?: false),
-                    )
+                    "setSpeaker" -> {
+                        val outcome = setSpeaker(
+                            call.argument<Boolean>("on") ?: false,
+                            call.argument<String>("callId"),
+                        )
+                        Log.i(AUDIO_TAG, "-> $outcome")
+                        result.success(outcome)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -79,7 +105,21 @@ class MainActivity : FlutterActivity() {
     // Returns a description of what it did, so a phone that refuses can be told
     // apart from one that was never asked, and both from one that needed
     // nothing.
-    private fun setSpeaker(on: Boolean): String {
+    private fun setSpeaker(on: Boolean, callId: String?): String {
+        // An ANSWERED call is a self-managed Telecom call here (the ring is
+        // registered through CallkitConnectionService so it can bypass the
+        // keyguard on strict OEMs), and Telecom owns the audio route for as
+        // long as that call is up: its route state machine re-applies its own
+        // choice, so everything below is at best advisory and on some builds
+        // (Honor/Magic OS) ignored outright. Connection.setAudioRoute is the
+        // supported way to move a Telecom call's audio.
+        //
+        // Strictly THIS call's connection. A connection belonging to some other
+        // call is a leftover, and routing its audio would do nothing for the
+        // call the user is actually on (CallEngine sweeps those away when a
+        // call starts).
+        routeViaTelecom(on, callId)?.let { return it }
+
         val audio = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
@@ -88,28 +128,61 @@ class MainActivity : FlutterActivity() {
             return "legacy isSpeakerphoneOn=$on"
         }
 
+        val devices = audio.availableCommunicationDevices
+        val current = audio.communicationDevice
+        // Where the audio ACTUALLY is, asked of the routing layer rather than of
+        // the communication-device bookkeeping (Android 14+ only).
+        val routed = routedVoiceTypes(audio)
+        Log.i(
+            AUDIO_TAG,
+            "setSpeaker(on=$on) mode=${audio.mode} current=${current?.type} " +
+                "routed=$routed available=${devices.map { it.type }}",
+        )
+
+        // Where the call is being heard, best available answer: the explicitly
+        // selected device, else what the routing layer says, else nothing.
+        val activeType = current?.type ?: routed.firstOrNull()
+
         // The plugin ran just before us. If it already got us where we want to
         // be, touching the route again only invites it to re-decide.
-        val current = audio.communicationDevice
-        val onSpeaker = current?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-        if (on == onSpeaker) {
-            return "already ${if (on) "on" else "off"} speaker via plugin " +
-                "(current=${current?.type})"
+        //
+        // "Already there" has to mean the audio, not the bookkeeping. Some OEM
+        // builds accept the request, report the speaker as the communication
+        // device, and go on playing out of the earpiece — and this early return
+        // then swallowed every press, which is a speaker button that has never
+        // worked once rather than one that works on most phones. So the claim
+        // is only believed when the routing layer backs it up (or when the
+        // routing layer can't be asked, pre-34).
+        val claimsSpeaker = current?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        val reallyOnSpeaker = if (routed.isEmpty()) {
+            claimsSpeaker
+        } else {
+            routed.contains(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
         }
-
-        val devices = audio.availableCommunicationDevices
+        if (on == claimsSpeaker && on == reallyOnSpeaker) {
+            return "already ${if (on) "on" else "off"} speaker via plugin " +
+                "(current=${current?.type}, routed=$routed)"
+        }
 
         // A headset the user plugged in or paired outranks the speaker button:
         // blasting a call out of the loudspeaker when someone has earphones in
         // is worse than ignoring the toggle.
-        val external = devices.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
-                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
-                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+        //
+        // Only one the audio is actually ON, though. This used to bail whenever
+        // an external device was merely AVAILABLE, and availability includes
+        // every connected Bluetooth device — a watch, a paired speaker in
+        // another room — none of which the call is going through. One such
+        // device parked the speaker button permanently.
+        if (activeType != null && activeType in EXTERNAL_TYPES) {
+            return "left on external device (type=$activeType)"
         }
-        if (external != null) {
-            return "left on external device (type=${external.type})"
+        if (activeType == null) {
+            // Nothing to inspect (pre-34 with no explicit selection): fall back
+            // to the old, cautious rule.
+            val available = devices.firstOrNull { it.type in EXTERNAL_TYPES }
+            if (available != null) {
+                return "left on available external device (type=${available.type})"
+            }
         }
 
         if (!on) {
@@ -121,7 +194,53 @@ class MainActivity : FlutterActivity() {
             ?: return "no builtin speaker among ${devices.map { it.type }}"
 
         val applied = audio.setCommunicationDevice(speaker)
-        return "setCommunicationDevice(speaker)=$applied"
+        return "setCommunicationDevice(speaker)=$applied routedAfter=${routedVoiceTypes(audio)}"
+    }
+
+    // The device types the platform says a voice call would currently be heard
+    // through. Android 14+; empty everywhere else, and empty is "don't know",
+    // never "nothing".
+    private fun routedVoiceTypes(audio: AudioManager): List<Int> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return emptyList()
+        return try {
+            val attributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            audio.getAudioDevicesForAttributes(attributes).map { it.type }
+        } catch (e: Throwable) {
+            emptyList()
+        }
+    }
+
+    // Move the audio of this call's self-managed Telecom connection, if it has
+    // one. Returns null when Telecom is not in the picture — outgoing calls
+    // (never registered, see CallKitCallUi.startOutgoing), or a phone where
+    // addNewIncomingCall was refused — so the caller can fall back.
+    private fun routeViaTelecom(on: Boolean, callId: String?): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
+        if (callId.isNullOrEmpty()) return null
+        val connection = try {
+            CallkitConnection.find(callId)
+        } catch (e: Throwable) {
+            null
+        } ?: return null
+
+        val current = connection.callAudioState?.route
+        // Same rule as the AudioManager path: a headset the user is actually
+        // wearing outranks the speaker button.
+        if (current == CallAudioState.ROUTE_BLUETOOTH ||
+            current == CallAudioState.ROUTE_WIRED_HEADSET
+        ) {
+            return "telecom: left on external route=$current"
+        }
+        val want = if (on) CallAudioState.ROUTE_SPEAKER else CallAudioState.ROUTE_EARPIECE
+        return try {
+            connection.setAudioRoute(want)
+            "telecom setAudioRoute(${if (on) "speaker" else "earpiece"}) was=$current"
+        } catch (e: Exception) {
+            "telecom setAudioRoute failed: ${e.message}"
+        }
     }
 
     private fun releaseLocks() {

@@ -49,7 +49,6 @@ class InCallScreen extends StatefulWidget {
 class _InCallScreenState extends State<InCallScreen> {
   bool _localFullscreen = false;
   Timer? _timer;
-  int _seconds = 0;
   StreamSubscription<int>? _proximitySub;
   bool _proximityOn = false;
   // Video chrome (name/timer + controls) auto-hides a few seconds after it
@@ -106,23 +105,38 @@ class _InCallScreenState extends State<InCallScreen> {
     } catch (_) {}
   }
 
-  /// Start the mm:ss timer the first time we observe the connected state.
-  void _ensureTimer() {
-    if (_timer != null || engine.phase != EnginePhase.inCall) return;
+  /// Run a repaint tick for as long as we're connected.
+  ///
+  /// The tick only asks for a rebuild — the elapsed value itself comes from the
+  /// engine, per call. This State is not a reliable clock: a backgrounded app
+  /// builds no frames, so it can survive the end of one call and the start of
+  /// the next, and a seconds counter kept here showed the second call
+  /// continuing from the first one's 45 minutes.
+  void _syncTimer() {
+    final running = engine.phase == EnginePhase.inCall;
+    if (running == (_timer != null)) return;
+    if (!running) {
+      _timer?.cancel();
+      _timer = null;
+      return;
+    }
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _seconds++);
+      if (mounted) setState(() {});
     });
   }
 
   String get _elapsed {
-    final m = (_seconds ~/ 60).toString().padLeft(2, '0');
-    final s = (_seconds % 60).toString().padLeft(2, '0');
+    final since = engine.connectedAt;
+    final elapsed = since == null ? 0 : DateTime.now().difference(since).inSeconds;
+    final seconds = elapsed < 0 ? 0 : elapsed;
+    final m = (seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
     return '$m:$s';
   }
 
   @override
   Widget build(BuildContext context) {
-    _ensureTimer();
+    _syncTimer();
     final loc = AppLocalizations.of(context)!;
     final session = engine.session;
     // Prefer the name from the user's own address book over the server name.

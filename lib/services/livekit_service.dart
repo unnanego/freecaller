@@ -20,6 +20,7 @@ class LiveKitService {
   final CallLocks _locks;
 
   Room? _room;
+  String? _roomCallId;
   EventsListener<RoomEvent>? _listener;
 
   final _peerJoined = StreamController<void>.broadcast();
@@ -53,8 +54,15 @@ class LiveKitService {
   bool get hasPeer => (_room?.remoteParticipants.isNotEmpty) ?? false;
 
   Future<void> connect(String callId, {required bool video}) async {
-    // Never open a second room — a duplicate identity would kick the first.
-    if (_room != null) return;
+    // Never open a second room for the SAME call — a duplicate identity would
+    // kick the first. A room left over from a DIFFERENT call is a different
+    // problem: returning early there would hand the new call a connection to
+    // the old room, i.e. a call with no audio at all. Close it and go on.
+    if (_room != null) {
+      if (_roomCallId == callId) return;
+      log('livekit: closing leftover room $_roomCallId before joining $callId');
+      await disconnect();
+    }
     // The server checks we are a participant of a call that is still live
     // before it mints anything (pb_hooks/livekit.pb.js).
     final result = await _pb.send<Map<String, dynamic>>(
@@ -140,6 +148,7 @@ class LiveKitService {
             ),
     );
     _room = room;
+    _roomCallId = callId;
     // Connecting brings the audio session up and applies its own routing; the
     // choice above has to be re-asserted on the far side of that. The delayed
     // repeat is for Android: the device list is populated asynchronously once
@@ -161,7 +170,7 @@ class LiveKitService {
       await Hardware.instance.setSpeakerphoneOn(speakerOn.value);
       // …then the platform API directly, which is what actually moves the audio
       // on OEM builds that ignore the SDK's deprecated path.
-      final native = await _locks.setSpeaker(speakerOn.value);
+      final native = await _locks.setSpeaker(speakerOn.value, callId: _roomCallId);
       final outputs = await Hardware.instance.audioOutputs();
       log('audio route -> speaker=${speakerOn.value}'
           '${native == null ? '' : ' | native: $native'}'
@@ -254,6 +263,7 @@ class LiveKitService {
   Future<void> disconnect() async {
     final room = _room;
     _room = null;
+    _roomCallId = null;
     remoteVideo.value = null;
     localVideo.value = null;
     await _listener?.dispose();

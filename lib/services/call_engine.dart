@@ -73,11 +73,22 @@ class CallEngine extends ChangeNotifier {
   String _lastPeerName = '';
   bool _accepting = false;
   bool _muted = false;
+  DateTime? _connectedAt;
 
   EnginePhase get phase => _phase;
   CallSession? get session => _session;
   CallOutcome get lastOutcome => _lastOutcome;
   bool get muted => _muted;
+
+  /// When the CURRENT call became connected, or null if none is.
+  ///
+  /// The in-call timer is derived from this rather than counted by the screen.
+  /// The screen's State can outlive a call: while the app is backgrounded
+  /// Flutter builds no frames, so a call that ends and a new one that starts
+  /// while the phone is in someone's pocket are one uninterrupted lifetime as
+  /// far as the widget tree is concerned — and a counter living there carried
+  /// the first call's 45 minutes straight into the second one.
+  DateTime? get connectedAt => _connectedAt;
 
   Future<void> toggleMute() async {
     _muted = !_muted;
@@ -146,6 +157,19 @@ class CallEngine extends ChangeNotifier {
     await _recoverMissedRing();
   }
 
+  /// Clear a native call left over from an earlier one before this call takes
+  /// the audio. The bookkeeping in CallKitCallUi stops those being created;
+  /// this clears one that got through (or predates the fix) instead of letting
+  /// it hold the route for the call being placed.
+  Future<void> _clearStaleNativeCalls(String keepCallId) async {
+    try {
+      await _callUi.endStaleCalls(keepCallId);
+    } catch (e) {
+      // Best-effort: never let a failed sweep stop a call from being placed.
+      log('stale native call sweep failed', error: e);
+    }
+  }
+
   /// Pick up a call that is still ringing us server-side but that the native
   /// layer can no longer account for.
   ///
@@ -204,6 +228,7 @@ class CallEngine extends ChangeNotifier {
       // telecom foreground service, so on battery Wi-Fi power-save would starve
       // WebRTC ICE and the media connect below would time out.
       await _locks.acquire();
+      await _clearStaleNativeCalls(callId);
       await _callUi.startOutgoing(CallDisplay(
         callId: callId,
         peerName: contact.displayName,
@@ -328,6 +353,30 @@ class CallEngine extends ChangeNotifier {
     // has to be written as `declined` instead.
     var accepted = false;
     try {
+      // A session for a DIFFERENT call may still be standing here. iOS suspends
+      // the isolate for as long as the phone stays in a pocket, so a call that
+      // ended while the app was away is only noticed on the next resume — which
+      // can be this accept. Retire it before joining: LiveKitService.connect is
+      // strictly one room at a time and would silently return, leaving the new
+      // call with no media and the previous call's clock still running.
+      if (_session != null && _session!.callId != callId) {
+        log('accept $callId: retiring stale session ${_session!.callId}');
+        // CallOutcome.none deliberately: the user is answering, and an
+        // announcement about the previous call landing on top of that would
+        // only confuse. A connected call gets `ended` written so the other side
+        // (and the recents list) learns we left; anything earlier than that has
+        // its own owner for the terminal state.
+        //
+        // The native UI is left alone: it finished with that call long ago —
+        // it is ringing this one — and on iOS "end that call" is
+        // CXEndCallAction on everything CallKit holds, which would hang up the
+        // call being answered right here.
+        await _teardown(
+          CallOutcome.none,
+          writeState: _phase == EnginePhase.inCall ? CallState.ended : null,
+          endNativeCall: false,
+        );
+      }
       if (_session?.callId != callId) {
         final doc = await _calls.getCall(callId);
         if (doc == null || doc.calleeId != _myUid) return;
@@ -351,6 +400,9 @@ class CallEngine extends ChangeNotifier {
     _livekit.prepareRoute(video: _session?.isVideo ?? false);
     _setPhase(EnginePhase.inCall);
     await _locks.acquire();
+    // Same reason as the outgoing side: a leftover Telecom call owns the audio
+    // route, and this one is about to need it.
+    await _clearStaleNativeCalls(callId);
     await _livekit.connect(callId, video: _session?.isVideo ?? false);
     await _enableMediaWhenReady();
     await _callUi.reportConnected(callId);
@@ -505,8 +557,13 @@ class CallEngine extends ChangeNotifier {
 
   /// Single exit path. [writeState] is set when THIS side owns the
   /// transition; omitted when reacting to the other side (doc already
-  /// terminal).
-  Future<void> _teardown(CallOutcome outcome, {CallState? writeState}) async {
+  /// terminal). [endNativeCall] is cleared only when retiring a session the
+  /// native layer has already moved past — see [_accept].
+  Future<void> _teardown(
+    CallOutcome outcome, {
+    CallState? writeState,
+    bool endNativeCall = true,
+  }) async {
     log('engine: teardown outcome=$outcome write=$writeState (phase=$_phase)');
     final session = _session;
     final wasConnected = _phase == EnginePhase.inCall;
@@ -534,7 +591,7 @@ class CallEngine extends ChangeNotifier {
     }
     await _livekit.disconnect();
     await _locks.release();
-    if (session != null) {
+    if (session != null && endNativeCall) {
       await _callUi.end(session.callId, EndReason.local);
     }
     // Cue that a connected call has dropped (not for unanswered/declined rings).
@@ -549,6 +606,12 @@ class CallEngine extends ChangeNotifier {
 
   void _setPhase(EnginePhase phase) {
     _phase = phase;
+    // Stamp the connect time once per call, on the transition into it.
+    if (phase == EnginePhase.inCall) {
+      _connectedAt ??= DateTime.now();
+    } else if (phase != EnginePhase.dialing) {
+      _connectedAt = null;
+    }
     notifyListeners();
   }
 

@@ -19,19 +19,23 @@ class CallLocks {
   Future<void> release() => _invoke('release');
 
   /// Force the call audio onto the loudspeaker (or off it) through Android's
-  /// own AudioManager, alongside what the WebRTC plugin does.
+  /// own APIs, alongside what the WebRTC plugin does.
   ///
   /// The plugin routes via the deprecated isSpeakerphoneOn, which some OEM
   /// builds ignore outright — a speaker button that does nothing on one phone
   /// and works on every other. This goes through setCommunicationDevice, the
-  /// supported path since Android 12. It defers to a connected headset.
+  /// supported path since Android 12 — or, when [callId] is an answered call
+  /// that Telecom is hosting, through that call's own Connection, which is the
+  /// only thing that can move the audio while Telecom owns the route. It defers
+  /// to a connected headset either way.
   ///
   /// Returns the platform's account of what it did, for the log; null off
   /// Android or when the call failed.
-  Future<String?> setSpeaker(bool on) async {
+  Future<String?> setSpeaker(bool on, {String? callId}) async {
     if (defaultTargetPlatform != TargetPlatform.android) return null;
     try {
-      return await _channel.invokeMethod<String>('setSpeaker', {'on': on});
+      return await _channel
+          .invokeMethod<String>('setSpeaker', {'on': on, 'callId': callId});
     } catch (e) {
       log('native setSpeaker($on) failed', error: e);
       return null;

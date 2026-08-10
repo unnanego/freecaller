@@ -71,6 +71,12 @@ abstract class CallUi {
   /// accept that happened before the Flutter engine booted).
   Future<List<CallDisplay>> activeCalls();
 
+  /// Ends anything the OS still counts as a live call other than [keepCallId],
+  /// called as a new call is starting. A leftover is not cosmetic where the
+  /// native call is a real OS-level one: it can hold the audio route and keep
+  /// the whole phone "in a call".
+  Future<void> endStaleCalls(String keepCallId);
+
   /// iOS PushKit VoIP token (null on other platforms).
   Future<String?> voipToken();
 
