@@ -1,0 +1,15 @@
+// Version numbers for the Siri extension, from the one place they are written.
+//
+// The extension's Info.plist reads $(CURRENT_PROJECT_VERSION) and
+// $(MARKETING_VERSION), and its target had those hardcoded to 1 / 0.1.0 — so the
+// appex claimed a different version than the app and every upload drew
+// ITMS-90473 twice. Pointing them at the Flutter values instead only works if
+// the target can SEE those values, and this target had no base configuration at
+// all: they expanded to empty and Xcode dropped the keys from the plist
+// entirely, which is worse than a mismatch.
+//
+// Generated.xcconfig is where `flutter build` writes FLUTTER_BUILD_NAME and
+// FLUTTER_BUILD_NUMBER from pubspec. Included directly rather than via
+// Flutter/Release.xcconfig, which also pulls in Pods-Runner — the app's pod
+// search paths and link flags have no business in an app extension.
+#include "../Flutter/Generated.xcconfig"
