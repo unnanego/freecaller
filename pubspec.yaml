@@ -19,7 +19,7 @@ publish_to: "none"
 # 1.1.0+13 went up to the store as build 14. Build with
 # `--export-options-plist=ios/ExportOptions.plist` (see docs/RUNBOOK.md) so the
 # binary carries the number written here.
-version: 1.1.1+16
+version: 1.1.2+17
 
 environment:
   sdk: ^3.12.0
@@ -56,11 +56,17 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.1
 
 dependency_overrides:
-  # Vendored + patched flutter_callkit_incoming 3.1.3 (issue #827): the stock
-  # plugin silences the Android incoming ringtone ~1s in because its volume-key
-  # receiver misreads the self-managed Telecom audio-setup VOLUME_CHANGED
-  # broadcast as a user key-press. The patch only stops the ring on a real RING-
-  # stream volume change. See third_party/flutter_callkit_incoming.
+  # Vendored flutter_callkit_incoming 3.1.5 + ONE patched file, and the override
+  # still has to exist: upstream has since fixed issue #827 (the Android incoming
+  # ringtone silencing itself ~1s in, because the volume-key receiver read the
+  # self-managed Telecom audio-setup VOLUME_CHANGED broadcast as a key-press) but
+  # only by ignoring non-RING streams. The broadcasts observed here are ON the
+  # RING stream, so that is not enough; the patch additionally requires the volume
+  # value to have actually changed, which a real key-press does and these do not.
+  # Everything else is stock 3.1.5 — `diff -rq` against the pub cache shows
+  # CallkitNotificationManager.kt as the only difference. Drop the override the
+  # day upstream's check is as strict, and re-test an incoming call before
+  # believing it. See third_party/flutter_callkit_incoming.
   flutter_callkit_incoming:
     path: third_party/flutter_callkit_incoming
 

@@ -54,6 +54,8 @@ class CallkitNotificationManager(
         const val NOTIFICATION_CHANNEL_ID_ONGOING = "callkit_ongoing_channel_id"
         const val NOTIFICATION_CHANNEL_ID_MISSED = "callkit_missed_channel_id"
 
+        private const val ACTION_VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION"
+        private const val EXTRA_VOLUME_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE"
     }
 
     private var dataNotificationPermission: Map<String, Any> = HashMap()
@@ -1017,14 +1019,15 @@ class CallkitNotificationManager(
     // Start Signify modification
     inner class VolumeKeyBroadcastReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == "android.media.VOLUME_CHANGED_ACTION") {
-                // PATCH (issue #827): only treat this as a user volume-key press
-                // (which should silence the ring) when the RING stream volume
-                // ACTUALLY changed. The self-managed Telecom audio setup fires
-                // spurious VOLUME_CHANGED broadcasts on Android 14/15/16 that
-                // would otherwise stop the ringtone ~1s in.
+            if (intent?.action == ACTION_VOLUME_CHANGED) {
                 val streamType =
-                    intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1)
+                    intent.getIntExtra(EXTRA_VOLUME_STREAM_TYPE, -1)
+                // PATCH (issue #827, kept on top of upstream's narrower fix):
+                // upstream ignores non-RING streams, which is not enough. The
+                // self-managed Telecom audio setup fires spurious VOLUME_CHANGED
+                // broadcasts ON THE RING STREAM on Android 14/15/16, and reading
+                // those as a user key-press silenced the incoming ringtone about
+                // a second in. A real key-press changes the value; these do not.
                 val newVolume =
                     intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_VALUE", -1)
                 val prevVolume =
@@ -1049,7 +1052,7 @@ class CallkitNotificationManager(
             volumeKeyReceiver = VolumeKeyBroadcastReceiver()
             context.registerReceiver(
                 volumeKeyReceiver,
-                IntentFilter("android.media.VOLUME_CHANGED_ACTION")
+                IntentFilter(ACTION_VOLUME_CHANGED)
             )
             // End Signify modification
         }
