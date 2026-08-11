@@ -85,3 +85,36 @@ The `sweepStaleCalls` cron in `deploy/pocketbase/pb_hooks/calls.pb.js` runs
 every minute and flips `ringing` records past `ringExpiresAt` to `missed` —
 it covers a caller that crashed or went offline. If calls ever look stuck,
 check `journalctl -u pocketbase` first.
+
+## Releasing
+
+Bump the **version** in pubspec.yaml — the last component, every submission:
+1.1.0 → 1.1.1. That is the number that names the release everywhere. The `+N`
+behind it is Android's versionCode, which Play requires to be strictly greater
+than anything ever uploaded to the track, so it moves too — but it is a counter,
+not the release name.
+
+```
+flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+xcrun altool --upload-app --type ios -f build/ios/ipa/freecaller.ipa \
+  --apiKey R8JSXTZRG7 --apiIssuer 9361f0c2-10ac-409e-bc72-8e29c63607ed
+flutter build appbundle --release      # Play upload is manual, Console UI
+```
+
+**Always pass `--export-options-plist`.** Without it Flutter writes its own
+export options with `manageAppVersionAndBuildNumber` set, and Xcode rewrites
+CFBundleVersion during export to whatever App Store Connect will accept next:
+an archive built as 13 was delivered to the store as 14, so the store, the git
+tag and the rejection email all disagreed. `ios/ExportOptions.plist` is the same
+file with that switch off.
+
+Verify what you are about to ship rather than what you meant to:
+
+```
+unzip -p build/ios/ipa/freecaller.ipa Payload/Runner.app/Info.plist | plutil -p - | grep -i version
+```
+
+After a plugin upgrade, Android may fail with `Cannot access class` errors from
+inside a plugin's own module (livekit_client did on 2.8.1 → 2.10.0). That is
+stale Kotlin incremental state, not an incompatibility: delete `build/<plugin>`
+and build again.

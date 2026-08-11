@@ -1,0 +1,9 @@
+{
+  "name": "freecaller-tools",
+  "private": true,
+  "type": "module",
+  "description": "Dev/admin scripts. Only faketalk.mjs needs a dependency — everything else runs on plain Node with fetch, deliberately.",
+  "dependencies": {
+    "@livekit/rtc-node": "^0.13.15"
+  }
+}

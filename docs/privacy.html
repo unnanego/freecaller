@@ -45,6 +45,11 @@
   <li><strong>Базовые технические данные.</strong> Для обеспечения звонков и работы сервиса наша
   инфраструктура (Google Firebase и LiveKit) обрабатывает данные соединения и диагностики — например,
   идентификаторы устройства/сессии и метки времени.</li>
+  <li><strong>Диагностика звука (только Android).</strong> Во время звонка приложение отправляет на наш
+  сервер техническую запись о том, через какое устройство идёт звук: модель телефона, версию Android и
+  выбранный аудиовыход. Это нужно, чтобы находить неполадки с громкой связью на телефонах, к которым
+  у нас нет физического доступа. Записи не содержат ни содержимого звонков, ни данных из адресной
+  книги и удаляются через 14 дней.</li>
 </ul>
 
 <h2>Как обрабатываются ваши звонки</h2>
@@ -118,6 +123,10 @@ at <strong>pa@holographica.space</strong>.</p>
   <li><strong>Basic technical data.</strong> To deliver calls and keep the service working, our
   infrastructure (Google Firebase and LiveKit) processes connection and diagnostic data such as
   device/session identifiers and timestamps.</li>
+  <li><strong>Audio diagnostics (Android only).</strong> During a call the app sends our server a
+  technical note about where the call audio is going: the phone model, the Android version and the
+  selected audio output. This is how we find speakerphone faults on phones we have no physical access
+  to. These notes contain no call content and no address-book data, and are deleted after 14 days.</li>
 </ul>
 
 <h2>How your calls are handled</h2>
