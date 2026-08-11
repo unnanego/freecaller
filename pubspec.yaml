@@ -1,10 +1,25 @@
 name: freecaller
 description: "Family VoIP caller (Звонилка) — dead-simple, accessible, voice-first."
 publish_to: "none"
-# Marketing version 1.1, 1.2, … one bump per release; the +N build number must
-# rise on EVERY store upload (both stores reject a duplicate). pubspec requires
-# three-part semver, so 1.1 is spelled 1.1.0 — the stores display it as "1.1".
-version: 1.1.0+13
+# THE VERSION is what identifies a release: bump the last component every time
+# something is submitted — 1.1.0, 1.1.1, 1.1.2. That is the number to read in a
+# commit message, a rejection email or a store listing.
+#
+# The +N behind it is not a second release number, it is Android's versionCode,
+# and Google Play requires it to be strictly greater than anything ever uploaded
+# to that track — a duplicate or a decrease is rejected forever. So it still has
+# to move for a Play upload; it just isn't the thing that names the release.
+#
+# Apple takes it as CFBundleVersion, which only has to be unique WITHIN one
+# version string, so a fresh version resets its meaning there.
+#
+# Beware `flutter build ipa` on its own: the ExportOptions.plist it generates
+# sets manageAppVersionAndBuildNumber, and Xcode then silently rewrites
+# CFBundleVersion at export to whatever App Store Connect will accept next —
+# 1.1.0+13 went up to the store as build 14. Build with
+# `--export-options-plist=ios/ExportOptions.plist` (see docs/RUNBOOK.md) so the
+# binary carries the number written here.
+version: 1.1.1+15
 
 environment:
   sdk: ^3.12.0
@@ -22,7 +37,7 @@ dependencies:
   firebase_core: ^4.4.0
   firebase_messaging: ^16.1.0
   pocketbase: ^0.24.0
-  livekit_client: ^2.8.0
+  livekit_client: ^2.10.0
   flutter_callkit_incoming: ^3.1.3
   uuid: ^4.5.0
   shared_preferences: ^2.3.0

@@ -6,18 +6,24 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../core/config.dart';
 import '../core/log.dart';
+import '../data/diagnostics_repo.dart';
 import 'call_locks.dart';
 
 /// Wraps a single LiveKit room connection (the app is one-call-at-a-time).
 /// Room name == callId; the server mints a token per participant. Voice
 /// calls default to the earpiece, video calls to the speaker + front camera.
 class LiveKitService {
-  LiveKitService(this._pb, {CallLocks? locks}) : _locks = locks ?? CallLocks();
+  LiveKitService(this._pb, {CallLocks? locks, DiagnosticsRepo? diagnostics})
+      : _locks = locks ?? CallLocks(),
+        _diagnostics = diagnostics ?? DiagnosticsRepo(_pb);
 
   final PocketBase _pb;
 
   /// The Android bridge — used here only for its native audio route.
   final CallLocks _locks;
+
+  /// Where the audio-route report goes on a phone whose logs we can't read.
+  final DiagnosticsRepo _diagnostics;
 
   Room? _room;
   String? _roomCallId;
@@ -167,14 +173,28 @@ class LiveKitService {
     try {
       // First the SDK, so its own device switcher agrees with us and does not
       // undo the choice on the next device-change event…
-      await Hardware.instance.setSpeakerphoneOn(speakerOn.value);
+      //
+      // AudioManager rather than the older Hardware.setSpeakerphoneOn, which as
+      // of livekit_client 2.10 forwards here anyway. `force` stays off: forcing
+      // the speaker over a connected headset at the SDK level would contradict
+      // the native path below, which deliberately leaves the audio on a headset
+      // the call is actually going through.
+      await AudioManager.instance.setSpeakerOutputPreferred(speakerOn.value);
       // …then the platform API directly, which is what actually moves the audio
-      // on OEM builds that ignore the SDK's deprecated path.
+      // on OEM builds that ignore what the SDK asked for.
       final native = await _locks.setSpeaker(speakerOn.value, callId: _roomCallId);
       final outputs = await Hardware.instance.audioOutputs();
-      log('audio route -> speaker=${speakerOn.value}'
+      final report = 'speaker=${speakerOn.value}'
           '${native == null ? '' : ' | native: $native'}'
-          ' | outputs=[${outputs.map((d) => d.label).join(', ')}]');
+          ' | outputs=[${outputs.map((d) => d.label).join(', ')}]';
+      log('audio route -> $report');
+      // And to the server, because on the phone this is for, the line above goes
+      // nowhere: release builds compile log() out and the device is never on a
+      // cable. Sends only when the report CHANGES, so the several re-asserts a
+      // call makes cost one write, not five. Never awaited.
+      if (native != null) {
+        _diagnostics.record('audioRoute', detail: report, callId: _roomCallId);
+      }
     } catch (e) {
       log('applying audio route (speaker=${speakerOn.value}) failed', error: e);
     }

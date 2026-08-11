@@ -125,11 +125,21 @@ class CallEngine extends ChangeNotifier {
             await _callUi.end(active.callId, EndReason.remote);
             continue;
           }
-          if (doc.state == CallState.ringing && doc.calleeId == _myUid) {
-            _adoptIncoming(doc);
-          } else if (doc.state == CallState.accepted) {
+          if (doc.state == CallState.accepted) {
             _adoptIncoming(doc);
             await _join(doc.callId);
+          } else if (doc.state == CallState.ringing && doc.calleeId == _myUid) {
+            if (active.accepted) {
+              // Answered already — natively, before this isolate existed (see
+              // CallDisplay.accepted). The accept event is gone, so finish the
+              // job it would have done: write `accepted` and join. Without this
+              // the call dies here in silence, with Telecom showing an active
+              // call, no audio, and the caller ringing on to the timeout.
+              log('cold start: completing native accept of ${doc.callId}');
+              await _accept(doc.callId);
+            } else {
+              _adoptIncoming(doc);
+            }
           } else {
             await _callUi.end(active.callId, EndReason.remote);
           }

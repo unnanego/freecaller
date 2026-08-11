@@ -105,7 +105,49 @@ class MainActivity : FlutterActivity() {
     // Returns a description of what it did, so a phone that refuses can be told
     // apart from one that was never asked, and both from one that needed
     // nothing.
+    //
+    // The report is one self-contained human-readable line — phone, API level,
+    // what was asked, the audio state either side of the attempt — because it is
+    // read by eye, in a terminal, by someone who cannot touch the device: the
+    // phone that gets this wrong is in another country and only ever updated
+    // through Play, so Dart hands this string to the server (DiagnosticsRepo).
     private fun setSpeaker(on: Boolean, callId: String?): String {
+        val audio = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val before = audioState(audio)
+        val outcome = applySpeaker(on, callId, audio)
+        // The "after" state is read immediately, so a route the platform is still
+        // in the middle of applying can legitimately lag it by a beat.
+        return "${Build.MANUFACTURER} ${Build.MODEL} api=${Build.VERSION.SDK_INT} " +
+            "want=${if (on) "speaker" else "earpiece"} | before: $before | " +
+            "$outcome | after: ${audioState(audio)}"
+    }
+
+    // Everything about the current route worth knowing, with the device types
+    // spelled out — a bare "type=2" is unreadable at a distance.
+    private fun audioState(audio: AudioManager): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return "mode=${audio.mode}"
+        val current = audio.communicationDevice
+        val available = audio.availableCommunicationDevices.map { typeName(it.type) }
+        return "mode=${audio.mode} current=${typeName(current?.type)} " +
+            "routed=${routedVoiceTypes(audio).map { typeName(it) }} available=$available"
+    }
+
+    private fun typeName(type: Int?): String = when (type) {
+        null -> "none"
+        AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "earpiece"
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+        AudioDeviceInfo.TYPE_WIRED_HEADSET -> "wired-headset"
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "wired-headphones"
+        AudioDeviceInfo.TYPE_USB_HEADSET -> "usb-headset"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "bt-sco"
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bt-a2dp"
+        AudioDeviceInfo.TYPE_BLE_HEADSET -> "ble-headset"
+        AudioDeviceInfo.TYPE_BLE_SPEAKER -> "ble-speaker"
+        AudioDeviceInfo.TYPE_HEARING_AID -> "hearing-aid"
+        else -> "type$type"
+    }
+
+    private fun applySpeaker(on: Boolean, callId: String?, audio: AudioManager): String {
         // An ANSWERED call is a self-managed Telecom call here (the ring is
         // registered through CallkitConnectionService so it can bypass the
         // keyguard on strict OEMs), and Telecom owns the audio route for as
@@ -120,8 +162,6 @@ class MainActivity : FlutterActivity() {
         // call starts).
         routeViaTelecom(on, callId)?.let { return it }
 
-        val audio = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             @Suppress("DEPRECATION")
             audio.isSpeakerphoneOn = on
@@ -133,11 +173,6 @@ class MainActivity : FlutterActivity() {
         // Where the audio ACTUALLY is, asked of the routing layer rather than of
         // the communication-device bookkeeping (Android 14+ only).
         val routed = routedVoiceTypes(audio)
-        Log.i(
-            AUDIO_TAG,
-            "setSpeaker(on=$on) mode=${audio.mode} current=${current?.type} " +
-                "routed=$routed available=${devices.map { it.type }}",
-        )
 
         // Where the call is being heard, best available answer: the explicitly
         // selected device, else what the routing layer says, else nothing.
@@ -160,8 +195,7 @@ class MainActivity : FlutterActivity() {
             routed.contains(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
         }
         if (on == claimsSpeaker && on == reallyOnSpeaker) {
-            return "already ${if (on) "on" else "off"} speaker via plugin " +
-                "(current=${current?.type}, routed=$routed)"
+            return "already ${if (on) "on" else "off"} speaker via plugin"
         }
 
         // A headset the user plugged in or paired outranks the speaker button:
@@ -174,14 +208,14 @@ class MainActivity : FlutterActivity() {
         // another room — none of which the call is going through. One such
         // device parked the speaker button permanently.
         if (activeType != null && activeType in EXTERNAL_TYPES) {
-            return "left on external device (type=$activeType)"
+            return "left on external device (${typeName(activeType)})"
         }
         if (activeType == null) {
             // Nothing to inspect (pre-34 with no explicit selection): fall back
             // to the old, cautious rule.
             val available = devices.firstOrNull { it.type in EXTERNAL_TYPES }
             if (available != null) {
-                return "left on available external device (type=${available.type})"
+                return "left on available external device (${typeName(available.type)})"
             }
         }
 
@@ -191,10 +225,10 @@ class MainActivity : FlutterActivity() {
         }
 
         val speaker = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-            ?: return "no builtin speaker among ${devices.map { it.type }}"
+            ?: return "no builtin speaker to select"
 
         val applied = audio.setCommunicationDevice(speaker)
-        return "setCommunicationDevice(speaker)=$applied routedAfter=${routedVoiceTypes(audio)}"
+        return "setCommunicationDevice(speaker)=$applied"
     }
 
     // The device types the platform says a voice call would currently be heard

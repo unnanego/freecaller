@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  App Store export options, committed so the build number is OURS.
+
+  `flutter build ipa` generates this file itself when not given one, and its
+  version sets manageAppVersionAndBuildNumber = true: Xcode then rewrites
+  CFBundleVersion during export to whatever App Store Connect will take next.
+  The archive said 13 and the store received 14, which makes every "Build N"
+  commit message a guess and makes a rejection email hard to tie to a build.
+
+  Everything else mirrors what Flutter generates. Use it with:
+
+    flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+-->
+<plist version="1.0">
+<dict>
+	<key>destination</key>
+	<string>export</string>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>teamID</key>
+	<string>R9577QC7DM</string>
+	<key>generateAppStoreInformation</key>
+	<false/>
+	<key>stripSwiftSymbols</key>
+	<true/>
+	<key>uploadSymbols</key>
+	<true/>
+	<key>testFlightInternalTestingOnly</key>
+	<false/>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>

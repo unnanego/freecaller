@@ -7,16 +7,26 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/config.dart';
 import '../../core/log.dart';
+import '../../data/diagnostics_repo.dart';
 import 'call_ui.dart';
 
 /// CallUi backed by flutter_callkit_incoming — covers both iOS (CallKit)
 /// and Android (CallStyle full-screen notification + ConnectionService).
 class CallKitCallUi implements CallUi {
-  CallKitCallUi() {
+  // A named parameter cannot be an initializing formal for a private field
+  // (`this._diagnostics` is not a legal named parameter), and `diagnostics:` is
+  // worth keeping at the call site.
+  // ignore: prefer_initializing_formals
+  CallKitCallUi({DiagnosticsRepo? diagnostics}) : _diagnostics = diagnostics {
     FlutterCallkitIncoming.onEvent.listen(_onEvent, onError: (Object e) {
       log('callkit event error', error: e);
     });
   }
+
+  /// Null in the FCM background isolate, which has no PocketBase client — it
+  /// only ever shows or dismisses a ring, so there is nothing there worth
+  /// reporting anyway.
+  final DiagnosticsRepo? _diagnostics;
 
   final _events = StreamController<CallUiEvent>.broadcast();
 
@@ -215,6 +225,10 @@ class CallKitCallUi implements CallUi {
           peerName: call.nameCaller ?? '',
           peerPhone: call.handle ?? '',
           isVideo: call.type == 1,
+          // The plugin records this when the user answers (Android:
+          // addCall(..., isAccepted = true)). It is how a cold-started engine
+          // learns that an answer it never saw has already happened.
+          accepted: call.isAccepted,
         ),
     ];
   }
@@ -234,6 +248,15 @@ class CallKitCallUi implements CallUi {
     for (final call in await activeCalls()) {
       if (call.callId == keepCallId) continue;
       log('ending stale native call ${call.callId}');
+      // Worth a line to the server: finding one here means a previous call was
+      // never ended, which is the whole reason the speaker went dead — and on
+      // the phone that reported it, this is the only way to learn that it
+      // happened (see DiagnosticsRepo).
+      _diagnostics?.record(
+        'staleNativeCall',
+        detail: 'left over from ${call.callId}, ended before $keepCallId',
+        callId: keepCallId,
+      );
       await dismiss(call.callId);
     }
   }

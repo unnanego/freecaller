@@ -10,12 +10,25 @@ class CallDisplay {
     required this.peerName,
     required this.peerPhone,
     required this.isVideo,
+    this.accepted = false,
   });
 
   final String callId;
   final String peerName;
   final String peerPhone;
   final bool isVideo;
+
+  /// Only meaningful on a call from [CallUi.activeCalls]: the user has already
+  /// ANSWERED this one natively, before the engine existed to hear about it.
+  ///
+  /// Without this the answer is simply lost. The accept is broadcast once, and
+  /// on Android a ring that arrives while the app is dead is handled by the FCM
+  /// background isolate — so when the tap on Answer launches the app, the accept
+  /// has already been and gone, and the isolate that could have acted on it is
+  /// not the one that starts. The engine would then find a call still `ringing`,
+  /// sit in the incoming phase waiting for an event that can never arrive, and
+  /// leave the caller ringing to the timeout while Telecom shows an active call.
+  final bool accepted;
 }
 
 enum CallUiEventType {
