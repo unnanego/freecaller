@@ -39,7 +39,9 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Микрофон нужен для звонков</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Камера нужна для видеозвонков</string>
+	<string>Камера нужна для видеозвонков и для снимка на фото профиля</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Фотографии нужны, чтобы выбрать снимок для профиля. Выбранное фото загружается только на наш сервер и видно вашим близким в приложении.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Номера из ваших контактов отправляются на наш сервер, чтобы найти близких, которые уже пользуются приложением. Номера используются только для поиска и не сохраняются.</string>
 	<key>NSSiriUsageDescription</key>

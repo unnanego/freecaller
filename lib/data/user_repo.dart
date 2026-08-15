@@ -1,10 +1,26 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
 
 import '../core/config.dart';
 import 'models.dart';
+
+/// That phone number, or that address, already belongs to another account.
+class ProfileConflictException implements Exception {
+  const ProfileConflictException(this.message);
+
+  final String message;
+}
+
+/// The server refused a profile edit and said why, in words meant for the user
+/// (the hooks answer in Russian).
+class ProfileEditException implements Exception {
+  const ProfileEditException(this.message);
+
+  final String message;
+}
 
 /// The roster: profiles, contacts, and the in-app child-safety report.
 ///
@@ -23,10 +39,120 @@ class UserRepo {
 
   RecordService get _users => _pb.collection(Config.pbUsersCollection);
 
-  /// The owner may edit their own display name — and only that; anything else
-  /// is rejected by `pb_hooks/users.pb.js`.
+  /// The owner may edit their own name, number and picture; `contacts`,
+  /// `verified` and `email` stay admin-managed, enforced by
+  /// `pb_hooks/users.pb.js`.
   Future<void> updateDisplayName(String uid, String name) async {
     await _users.update(uid, body: {'displayName': name});
+  }
+
+  /// Change the number this account is found by in other people's address
+  /// books. The server normalises it to E.164 and refuses a number another
+  /// account already holds.
+  Future<void> updatePhone(String uid, String phone) async {
+    try {
+      await _users.update(uid, body: {'phone': phone});
+    } on ClientException catch (e) {
+      throw _profileError(e);
+    }
+  }
+
+  /// Replace this account's picture. [bytes] is the already-encoded image; the
+  /// server caps it at 2 MB and JPEG/PNG/WebP.
+  Future<void> updateAvatar(String uid, Uint8List bytes, String filename) async {
+    try {
+      await _users.update(
+        uid,
+        files: [http.MultipartFile.fromBytes('avatar', bytes, filename: filename)],
+      );
+    } on ClientException catch (e) {
+      throw _profileError(e);
+    }
+  }
+
+  /// Drop the picture and go back to the initials tile. PocketBase clears a
+  /// file field when it is sent as an empty value.
+  Future<void> removeAvatar(String uid) async {
+    try {
+      await _users.update(uid, body: {'avatar': null});
+    } on ClientException catch (e) {
+      throw _profileError(e);
+    }
+  }
+
+  /// Step one of moving the account to another mailbox: the server mails a code
+  /// to [email]. Nothing changes until [confirmEmailChange] gets that code
+  /// back, so the current address keeps working meanwhile.
+  Future<void> requestEmailChange(String email) async {
+    try {
+      await _pb.send<Map<String, dynamic>>(
+        Config.pbEmailChangeRequestPath,
+        method: 'POST',
+        body: {'email': email},
+      );
+    } on ClientException catch (e) {
+      throw _profileError(e);
+    }
+  }
+
+  /// Step two: hand back the code from the new mailbox. Returns the address now
+  /// on the account.
+  ///
+  /// The route answers with a whole new session, and adopting it is not
+  /// optional: changing the email rotates the record's token key server-side,
+  /// so the token this request was made with is already dead by the time the
+  /// response arrives. Refreshing instead of replacing it is what signed the
+  /// first tester out mid-change — an auth-refresh straight after the confirm
+  /// answers 401, and Settings went on showing the old address because the
+  /// stored auth record was never updated either.
+  Future<String> confirmEmailChange(String code) async {
+    try {
+      final result = await _pb.send<Map<String, dynamic>>(
+        Config.pbEmailChangeConfirmPath,
+        method: 'POST',
+        body: {'code': code},
+      );
+      final token = result['token'];
+      final record = result['record'];
+      if (token is String && token.isNotEmpty && record is Map) {
+        _pb.authStore.save(
+          token,
+          RecordModel.fromJson(Map<String, dynamic>.from(record)),
+        );
+      }
+      final email = record is Map ? record['email'] : null;
+      return email is String ? email : '';
+    } on ClientException catch (e) {
+      throw _profileError(e);
+    }
+  }
+
+  /// Turns a hook's refusal into something the UI can show.
+  ///
+  /// The hooks answer in Russian and say exactly what is wrong ("Этот номер уже
+  /// занят", "Неверный код"), which is more use to the person editing the field
+  /// than anything the app could guess from a status code — so pass it through
+  /// when there is one, and fall back to the caller's own wording when there
+  /// isn't (a dropped connection has no message worth showing).
+  Exception _profileError(ClientException e) {
+    final message = e.response['message'];
+    final text = message is String ? message.trim() : '';
+    if (text.isEmpty) return e;
+    return e.statusCode == 409
+        ? ProfileConflictException(text)
+        : ProfileEditException(text);
+  }
+
+  /// Where a stored avatar filename is served from.
+  ///
+  /// Built here rather than read off the record so that both paths agree: the
+  /// roster read has the whole record, while contact discovery only gets a uid
+  /// and a filename back from the match route. [thumb] picks one of the sizes
+  /// the collection generates — the originals are never shown.
+  static String avatarUrl(String uid, String filename, {String thumb = '300x300'}) {
+    if (filename.isEmpty) return '';
+    return '${Config.pbUrl}/api/files/'
+        '${Config.pbUsersCollection}/$uid/$filename?thumb=$thumb';
   }
 
   /// Files an in-app child-safety report. Kept fully in-app (no email/browser
@@ -58,7 +184,12 @@ class UserRepo {
   /// change. Bootstrap blocks on the first non-null value, so a stream that
   /// only pushed deltas would hang the app on a fresh install.
   Stream<UserProfile?> watchProfile(String uid) => _watchRecord(uid)
-      .map((record) => record == null ? null : UserProfile.fromRecord(record))
+      .map((record) => record == null
+          ? null
+          : UserProfile.fromRecord(
+              record,
+              avatarUrl: avatarUrl(record.id, record.get<String>('avatar', '')),
+            ))
       .distinct();
 
   /// The profile's contacts, resolved in the same read: `expand=contacts`
@@ -72,6 +203,7 @@ class UserRepo {
                 uid: c.id,
                 displayName: c.get<String>('displayName', ''),
                 phone: c.get<String>('phone', ''),
+                avatarUrl: avatarUrl(c.id, c.get<String>('avatar', '')),
               ),
           ])
       .distinct(listEquals);

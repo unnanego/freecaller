@@ -62,8 +62,8 @@ class CallEngine extends ChangeNotifier {
   final LiveKitService _livekit;
   final CallUi _callUi;
   final String _myUid;
-  final String _myName;
-  final String _myPhone;
+  String _myName;
+  String _myPhone;
   final CallSounds _sounds = CallSounds();
   final CallLocks _locks = CallLocks();
 
@@ -73,12 +73,16 @@ class CallEngine extends ChangeNotifier {
   String _lastPeerName = '';
   bool _accepting = false;
   bool _muted = false;
+  bool _cameraOff = false;
   DateTime? _connectedAt;
 
   EnginePhase get phase => _phase;
   CallSession? get session => _session;
   CallOutcome get lastOutcome => _lastOutcome;
   bool get muted => _muted;
+
+  /// Whether the user has stopped their own camera inside a video call.
+  bool get cameraOff => _cameraOff;
 
   /// When the CURRENT call became connected, or null if none is.
   ///
@@ -96,9 +100,29 @@ class CallEngine extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Stop (or resume) publishing our own camera without leaving video mode:
+  /// their picture stays, ours goes dark. Deliberately not [setVideo], which
+  /// drops the whole call back to voice for both sides.
+  Future<void> toggleCamera() async {
+    _cameraOff = !_cameraOff;
+    await _livekit.setCameraEnabled(!_cameraOff);
+    notifyListeners();
+  }
+
   /// Peer of the most recent session — survives teardown so the UI can
   /// announce «Аида не отвечает» after the session is gone.
   String get lastPeerName => _lastPeerName;
+
+  /// Follow the owner's own profile when they edit it.
+  ///
+  /// These two are stamped onto every outgoing call doc, which is what the
+  /// callee's ring screen reads — so a name or number changed in Settings has
+  /// to reach the engine, or the person you ring keeps seeing the old one until
+  /// the app is restarted.
+  void updateIdentity({required String name, required String phone}) {
+    _myName = name;
+    _myPhone = phone;
+  }
 
   StreamSubscription<CallUiEvent>? _uiEvents;
   StreamSubscription<CallDoc?>? _docWatch;
@@ -478,15 +502,19 @@ class CallEngine extends ChangeNotifier {
     // Camera is independent of the CallKit audio session. It fails silently
     // if the app is backgrounded (lock-screen answer) — ensureCameraOn()
     // retries when the app foregrounds.
-    if (_session?.isVideo ?? false) {
+    if ((_session?.isVideo ?? false) && !_cameraOff) {
       await _livekit.setCameraEnabled(true);
     }
   }
 
   /// Called by the UI shell on app resume: iOS drops/refuses camera capture
   /// while backgrounded, so re-assert it whenever we're in an active video call.
+  ///
+  /// Never against the user's wishes: a camera they switched off must stay off
+  /// across a trip to the home screen.
   Future<void> ensureCameraOn() async {
     if ((_session?.isVideo ?? false) &&
+        !_cameraOff &&
         (_phase == EnginePhase.inCall || _phase == EnginePhase.dialing)) {
       await _livekit.setCameraEnabled(true);
     }
@@ -519,6 +547,10 @@ class CallEngine extends ChangeNotifier {
     final s = _session;
     if (s == null) return;
     _session = s.copyWith(isVideo: video);
+    // Entering video mode always starts with the camera live, whoever asked
+    // for it — a stale "camera off" from earlier in the call would otherwise
+    // make turning video on look broken.
+    if (video) _cameraOff = false;
     await _livekit.setCameraEnabled(video);
     await _livekit.setSpeaker(video);
     notifyListeners();
@@ -611,6 +643,7 @@ class CallEngine extends ChangeNotifier {
     _session = null;
     _lastOutcome = outcome;
     _muted = false;
+    _cameraOff = false;
     _setPhase(EnginePhase.idle);
   }
 

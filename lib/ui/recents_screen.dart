@@ -18,12 +18,14 @@ class RecentsScreen extends StatefulWidget {
     super.key,
     required this.recents,
     required this.names,
+    required this.avatars,
     required this.myUid,
     required this.onCall,
   });
 
   final List<CallDoc> recents;
   final ContactNames names;
+  final PeerAvatars avatars;
 
   /// Which side of each call we were on — the only thing that distinguishes an
   /// incoming record from an outgoing one.
@@ -76,6 +78,7 @@ class _RecentsScreenState extends State<RecentsScreen> {
                     itemBuilder: (_, i) => _RecentRow(
                       call: rows[i],
                       names: widget.names,
+                      avatars: widget.avatars,
                       myUid: widget.myUid,
                       onCall: widget.onCall,
                     ),
@@ -132,12 +135,14 @@ class _RecentRow extends StatelessWidget {
   const _RecentRow({
     required this.call,
     required this.names,
+    required this.avatars,
     required this.myUid,
     required this.onCall,
   });
 
   final CallDoc call;
   final ContactNames names;
+  final PeerAvatars avatars;
   final String myUid;
   final void Function(Contact contact, {required bool video}) onCall;
 
@@ -194,7 +199,7 @@ class _RecentRow extends StatelessWidget {
           child: ExcludeSemantics(
             child: Row(
               children: [
-                InitialsTile(name: name),
+                InitialsTile(name: name, imageUrl: avatars.urlFor(peerUid)),
                 const SizedBox(width: Mod.s3),
                 Expanded(
                   child: Column(

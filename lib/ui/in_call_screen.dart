@@ -7,6 +7,7 @@ import 'package:livekit_client/livekit_client.dart';
 import 'package:proximity_sensor/proximity_sensor.dart';
 
 import '../data/contact_discovery.dart';
+import '../data/models.dart';
 import '../services/call_engine.dart';
 import '../services/livekit_service.dart';
 import 'theme/modernist.dart';
@@ -36,11 +37,15 @@ class InCallScreen extends StatefulWidget {
     required this.engine,
     required this.livekit,
     required this.names,
+    required this.avatars,
   });
 
   final CallEngine engine;
   final LiveKitService livekit;
   final ContactNames names;
+
+  /// Peers' profile pictures, for the voice screen's big avatar.
+  final PeerAvatars avatars;
 
   @override
   State<InCallScreen> createState() => _InCallScreenState();
@@ -210,7 +215,12 @@ class _InCallScreenState extends State<InCallScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _Avatar(name: name, size: 140),
+                          _Avatar(
+                            name: name,
+                            size: 140,
+                            imageUrl: widget.avatars
+                                .urlFor(engine.session?.peerUid ?? ''),
+                          ),
                           const SizedBox(height: Mod.s6),
                           Padding(
                             padding:
@@ -283,33 +293,43 @@ class _InCallScreenState extends State<InCallScreen> {
                   const _Scrim(alignment: Alignment.topCenter, height: 160),
                   // Bottom scrim behind the controls.
                   const _Scrim(alignment: Alignment.bottomCenter, height: 260),
-                  // Name + timer overlay, top-left.
+                  // Name + timer top-left, own-camera switch top-right.
                   SafeArea(
                     bottom: false,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(Mod.s6, Mod.s4, Mod.s6, 0),
                       child: Align(
-                        alignment: Alignment.topLeft,
-                        child: Semantics(
-                          label: spoken,
-                          child: ExcludeSemantics(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Mod.h2(color: _Call.onDark)
-                                      .copyWith(fontSize: 24),
+                        alignment: Alignment.topCenter,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Semantics(
+                                label: spoken,
+                                child: ExcludeSemantics(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Mod.h2(color: _Call.onDark)
+                                            .copyWith(fontSize: 24),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(sub,
+                                          style:
+                                              Mod.meta(color: _Call.onDarkMuted)),
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(sub,
-                                    style: Mod.meta(color: _Call.onDarkMuted)),
-                              ],
+                              ),
                             ),
-                          ),
+                            const SizedBox(width: Mod.s3),
+                            _cameraToggle(loc),
+                          ],
                         ),
                       ),
                     ),
@@ -454,6 +474,47 @@ class _InCallScreenState extends State<InCallScreen> {
     );
   }
 
+  /// Stop or resume our own camera, mid-video-call. Lives in the top-right
+  /// corner rather than the tray: a fourth round control does not fit one row
+  /// on a phone, and this belongs with the picture rather than with the
+  /// call-wide controls — it changes only what we send, not the call's mode.
+  Widget _cameraToggle(AppLocalizations loc) {
+    final off = engine.cameraOff;
+    return Semantics(
+      button: true,
+      label: off ? loc.cameraOn : loc.cameraOff,
+      child: InkWell(
+        onTap: engine.toggleCamera,
+        customBorder: const CircleBorder(),
+        child: ExcludeSemantics(
+          child: ClipOval(
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                width: 52,
+                height: 52,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: off ? Mod.accent : _Call.glass,
+                  border: Border.all(
+                    color: off ? Mod.accent : _Call.glassBorder,
+                    width: 1.5,
+                  ),
+                ),
+                child: Icon(
+                  off ? Icons.videocam_off : Icons.videocam,
+                  size: 24,
+                  color: _Call.onDark,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _flipButton(AppLocalizations loc) {
     return _RoundControl(
       label: loc.switchCamera,
@@ -520,15 +581,22 @@ class _InCallScreenState extends State<InCallScreen> {
   }
 }
 
-/// A circular initials avatar for the dark call surface.
+/// A circular avatar for the dark call surface: the peer's picture if we have
+/// one, their initials otherwise — and their initials again while it loads or
+/// if it fails, since a voice call must not sit behind a blank circle.
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name, required this.size});
+  const _Avatar({required this.name, required this.size, this.imageUrl = ''});
 
   final String name;
   final double size;
+  final String imageUrl;
 
   @override
   Widget build(BuildContext context) {
+    final initials = Text(
+      initialsOf(name),
+      style: Mod.tileInitials(size * 0.34, color: _Call.onDark),
+    );
     return Container(
       width: size,
       height: size,
@@ -538,10 +606,20 @@ class _Avatar extends StatelessWidget {
         color: Colors.white.withValues(alpha: 0.08),
         border: Border.all(color: _Call.glassBorder, width: 2),
       ),
-      child: Text(
-        initialsOf(name),
-        style: Mod.tileInitials(size * 0.34, color: _Call.onDark),
-      ),
+      child: imageUrl.isEmpty
+          ? initials
+          : ClipOval(
+              child: Image.network(
+                imageUrl,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                loadingBuilder: (_, child, progress) =>
+                    progress == null ? child : initials,
+                errorBuilder: (_, _, _) => initials,
+              ),
+            ),
     );
   }
 }

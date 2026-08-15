@@ -307,7 +307,7 @@ class _AccessRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: Mod.s6, vertical: Mod.s3),
           child: Row(
             children: [
-              InitialsTile(name: contact.name),
+              InitialsTile(name: contact.name, imageUrl: contact.avatarUrl),
               const SizedBox(width: Mod.s3),
               Expanded(
                 child: ExcludeSemantics(

@@ -7,6 +7,7 @@ class UserProfile {
     required this.phone,
     required this.displayName,
     required this.contactUids,
+    this.avatarUrl = '',
   });
 
   final String uid;
@@ -14,13 +15,20 @@ class UserProfile {
   final String displayName;
   final List<String> contactUids;
 
+  /// Where this person's picture is served from, or empty if they have none.
+  /// Built by the repo, which knows the server address; the record itself only
+  /// carries the stored filename.
+  final String avatarUrl;
+
   /// `contacts` is a relation field, which the API serialises as a list of
   /// record ids.
-  factory UserProfile.fromRecord(RecordModel record) => UserProfile(
+  factory UserProfile.fromRecord(RecordModel record, {String avatarUrl = ''}) =>
+      UserProfile(
         uid: record.id,
         phone: record.get<String>('phone', ''),
         displayName: record.get<String>('displayName', ''),
         contactUids: record.get<List<dynamic>>('contacts', const []).cast<String>(),
+        avatarUrl: avatarUrl,
       );
 
   /// Value equality so a repo that re-reads the profile on a timer can drop
@@ -32,18 +40,29 @@ class UserProfile {
           other.uid == uid &&
           other.phone == phone &&
           other.displayName == displayName &&
+          other.avatarUrl == avatarUrl &&
           listEquals(other.contactUids, contactUids);
 
   @override
-  int get hashCode => Object.hash(uid, phone, displayName, Object.hashAll(contactUids));
+  int get hashCode =>
+      Object.hash(uid, phone, displayName, avatarUrl, Object.hashAll(contactUids));
 }
 
 class Contact {
-  const Contact({required this.uid, required this.displayName, required this.phone});
+  const Contact({
+    required this.uid,
+    required this.displayName,
+    required this.phone,
+    this.avatarUrl = '',
+  });
 
   final String uid;
   final String displayName;
   final String phone;
+
+  /// Their picture, or empty when they have none — every place that shows one
+  /// falls back to the initials tile.
+  final String avatarUrl;
 
   @override
   bool operator ==(Object other) =>
@@ -51,10 +70,28 @@ class Contact {
       other is Contact &&
           other.uid == uid &&
           other.displayName == displayName &&
-          other.phone == phone;
+          other.phone == phone &&
+          other.avatarUrl == avatarUrl;
 
   @override
-  int get hashCode => Object.hash(uid, displayName, phone);
+  int get hashCode => Object.hash(uid, displayName, phone, avatarUrl);
+}
+
+/// Profile pictures by uid, for the screens that know who someone is but not
+/// their record — a call in the history, a ringing peer.
+///
+/// Deliberately shaped like [ContactNames]: both answer "what do we know about
+/// this uid", both are rebuilt whenever the roster is, and both fall back
+/// silently when the answer is "nothing".
+class PeerAvatars {
+  const PeerAvatars(this._byUid);
+
+  final Map<String, String> _byUid;
+
+  static const empty = PeerAvatars({});
+
+  /// Their picture, or empty — every caller falls back to the initials tile.
+  String urlFor(String uid) => _byUid[uid] ?? '';
 }
 
 enum CallState { ringing, accepted, declined, cancelled, missed, ended }

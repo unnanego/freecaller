@@ -1,6 +1,7 @@
 package com.unnanego.freecaller
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
@@ -49,6 +50,29 @@ class MainActivity : FlutterActivity() {
                         )
                         Log.i(AUDIO_TAG, "-> $outcome")
                         result.success(outcome)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        // Profile photos go through our own activity rather than a plugin's
+        // activity result — see PhotoPickerActivity for why this app cannot use
+        // the ordinary path.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "freecaller/photo_picker")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "pick" -> {
+                        PhotoPickerBridge.begin(result)
+                        val intent = Intent(this, PhotoPickerActivity::class.java)
+                            .putExtra(
+                                PhotoPickerActivity.EXTRA_CAMERA,
+                                call.argument<Boolean>("camera") ?: false,
+                            )
+                            // Started from a singleInstance activity, so it gets
+                            // its own task either way; saying so keeps the
+                            // platform from complaining about it.
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
                     }
                     else -> result.notImplemented()
                 }

@@ -37,6 +37,11 @@ abstract final class Config {
   static const pbMatchContactsPath = '/api/freecaller/match-contacts';
   static const pbInvitePath = '/api/freecaller/invite';
 
+  /// Moving the account to another mailbox: the first route mails a code to the
+  /// new address, the second applies the change once it comes back.
+  static const pbEmailChangeRequestPath = '/api/freecaller/email-change/request';
+  static const pbEmailChangeConfirmPath = '/api/freecaller/email-change/confirm';
+
   /// How often a PocketBase profile watch re-reads the roster. Far slower than
   /// [callReconcileInterval] — a contact added by the admin can wait a minute,
   /// a call in the wrong state cannot.

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_contacts/flutter_contacts.dart' as fc;
@@ -9,6 +10,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/config.dart';
 import '../core/log.dart';
 import 'models.dart';
+import 'user_repo.dart';
+
+/// What the match route knows about a registered number.
+class _Match {
+  const _Match({required this.uid, required this.avatarUrl});
+
+  final String uid;
+  final String avatarUrl;
+}
 
 /// That phone number or email address is already on the roster.
 class InviteExistsException implements Exception {
@@ -32,6 +42,26 @@ class ContactMatchException implements Exception {
   String toString() => 'ContactMatchException: $cause';
 }
 
+/// The picked contact's fields could not be read, because contacts access was
+/// refused (Android only — see [ContactDiscoveryRepo.pickContact]).
+class ContactPickDeniedException implements Exception {
+  const ContactPickDeniedException();
+}
+
+/// One person, as handed back by the OS contact picker.
+class PickedContact {
+  const PickedContact({required this.name, required this.phones, this.email});
+
+  final String name;
+
+  /// Their numbers, normalised to E.164 where they parse, in address-book
+  /// order and deduplicated. May be empty — plenty of contacts are email-only.
+  final List<String> phones;
+
+  /// Their first email address, if they have one.
+  final String? email;
+}
+
 /// Whether the app may read the address book, and if not, whether asking again
 /// is even possible.
 enum ContactAccess {
@@ -53,6 +83,7 @@ class DiscoveredContact {
     required this.name,
     this.uid,
     this.phone,
+    this.avatarUrl = '',
   });
 
   final String deviceId;
@@ -64,11 +95,19 @@ class DiscoveredContact {
   /// The matched E.164 number (for placing the call), if on the app.
   final String? phone;
 
+  /// Their profile picture, if they use the app and have set one. The name
+  /// still comes from this phone's address book — only the picture is theirs.
+  final String avatarUrl;
+
   bool get onApp => uid != null;
 
   /// A callable roster contact (only valid when [onApp]).
-  Contact toContact() =>
-      Contact(uid: uid!, displayName: name, phone: phone ?? '');
+  Contact toContact() => Contact(
+        uid: uid!,
+        displayName: name,
+        phone: phone ?? '',
+        avatarUrl: avatarUrl,
+      );
 }
 
 /// Maps a registered user's uid to the name the current user has them saved
@@ -162,6 +201,58 @@ class ContactDiscoveryRepo {
     }
   }
 
+  /// Opens the system contact picker so the inviter can pick someone instead of
+  /// typing their number. Returns null if they backed out.
+  ///
+  /// This is deliberately not the discovery path: no address book is read, no
+  /// number is uploaded, so neither the upload consent nor (on iOS) the
+  /// contacts permission applies — the picker runs outside the app and hands
+  /// back exactly the one person tapped. Android has no such handoff: the
+  /// fields come from an ordinary content-resolver read, so READ_CONTACTS is
+  /// required and asked for there, and [ContactPickDeniedException] is thrown
+  /// if the answer is no.
+  Future<PickedContact?> pickContact() async {
+    if (Platform.isAndroid && !await hasPermission()) {
+      if (await requestAccess() != ContactAccess.granted) {
+        throw const ContactPickDeniedException();
+      }
+    }
+    final picked = await fc.FlutterContacts.native.showPicker(properties: {
+      fc.ContactProperty.name,
+      fc.ContactProperty.phone,
+      fc.ContactProperty.email,
+    });
+    if (picked == null) return null;
+    final phones = <String>[];
+    for (final p in picked.phones) {
+      final number = _pickerNumber(p.number);
+      if (number != null && !phones.contains(number)) phones.add(number);
+    }
+    final emails = picked.emails
+        .map((e) => e.address.trim())
+        .where((a) => a.isNotEmpty)
+        .toList();
+    return PickedContact(
+      name: picked.displayName?.trim() ?? '',
+      phones: phones,
+      email: emails.isEmpty ? null : emails.first,
+    );
+  }
+
+  /// A picked number, as the invite field wants it.
+  ///
+  /// Address books hold numbers however they were typed — "8 916 …",
+  /// "+7 (916) 123-45-67" — and the invite form takes E.164 only. Unparseable
+  /// numbers fall back to their bare digits rather than being dropped: the
+  /// field is still editable, and a number the inviter can see and fix beats a
+  /// pick that silently did nothing.
+  String? _pickerNumber(String raw) {
+    final e164 = _toE164(raw);
+    if (e164 != null) return e164;
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    return digits.isEmpty ? null : '+$digits';
+  }
+
   /// Where contacts access stands, without prompting for anything.
   Future<ContactAccess> accessStatus() async =>
       _access(await fc.FlutterContacts.permissions.check(fc.PermissionType.read));
@@ -236,11 +327,13 @@ class ContactDiscoveryRepo {
             registered.containsKey,
             orElse: () => '',
           );
+          final match = matched.isEmpty ? null : registered[matched];
           return DiscoveredContact(
             deviceId: entry.key,
             name: names[entry.key]!,
-            uid: matched.isEmpty ? null : registered[matched],
+            uid: match?.uid,
             phone: matched.isEmpty ? null : matched,
+            avatarUrl: match?.avatarUrl ?? '',
           );
         }(),
     ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -295,11 +388,11 @@ class ContactDiscoveryRepo {
     return _writes;
   }
 
-  /// Ask the backend which numbers belong to registered users → {e164: uid}.
+  /// Ask the backend which numbers belong to registered users → {e164: match}.
   ///
   /// Throws [ContactMatchException] if the request failed, rather than reporting
   /// an empty roster — see that class for why.
-  Future<Map<String, String>> _matchRegistered(List<String> phones) async {
+  Future<Map<String, _Match>> _matchRegistered(List<String> phones) async {
     try {
       final result = await _pb.send<Map<String, dynamic>>(
         Config.pbMatchContactsPath,
@@ -310,7 +403,16 @@ class ContactDiscoveryRepo {
           .map((m) => Map<String, dynamic>.from(m as Map));
       return {
         for (final m in matches)
-          if (m['phone'] is String) m['phone'] as String: m['uid'] as String,
+          if (m['phone'] is String)
+            m['phone'] as String: _Match(
+              uid: m['uid'] as String,
+              // The route hands back the stored filename; the URL is built the
+              // same way as for the roster read.
+              avatarUrl: UserRepo.avatarUrl(
+                m['uid'] as String,
+                m['avatar'] is String ? m['avatar'] as String : '',
+              ),
+            ),
       };
     } catch (e) {
       log('matchContacts failed', error: e);

@@ -22,6 +22,40 @@
         android:label="Звонилка"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- singleInstance is load-bearing for answering calls, and it stays.
+             It was tried as singleTask so that the photo picker could return its
+             result (a singleInstance activity is the only member its task can
+             hold, so anything started for a result is pushed into another task
+             and its answer never comes back — the picker opened and then
+             silently did nothing). Calls then dropped the instant they were
+             answered: the accept intent re-enters MainActivity with CLEAR_TOP,
+             which under singleTask lands in the same task as the callkit
+             activity and takes the Dart side down with the call, Telecom going
+             ACTIVE -> DISCONNECTED inside half a second.
+             A call that cannot be answered is the whole app; setting a photo
+             from an Android phone is not. If the picker is worth fixing it has
+             to be done without moving this activity out of its own task. -->
+        <!-- Ordinary launch mode, deliberately: this is the activity that CAN
+             receive a result, so the photo picker it starts answers it instead
+             of vanishing into another task. Invisible and kept out of Recents —
+             it exists for the moment a picker is on screen and finishes. -->
+        <activity
+            android:name=".PhotoPickerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Where the camera writes its capture before we scale it down. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.photos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/photo_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

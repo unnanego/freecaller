@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Where PhotoPickerActivity hands the camera its output file. Cache only:
+     a profile photo is temporary here, the copy that matters is on the server. -->
+<paths>
+    <cache-path name="photos" path="." />
+</paths>

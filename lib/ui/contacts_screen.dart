@@ -6,6 +6,7 @@ import 'package:freecaller/l10n/app_localizations.dart';
 
 import '../data/contact_discovery.dart';
 import '../data/models.dart';
+import 'phone_formatter.dart';
 import 'theme/modernist.dart';
 
 /// People from the OS address book who also use the app, auto-matched by phone
@@ -344,6 +345,88 @@ class _InviteSheetState extends State<_InviteSheet> {
     super.dispose();
   }
 
+  /// Fill the form from the OS contact picker, so the inviter doesn't have to
+  /// copy a number out of their address book by hand.
+  ///
+  /// Name and number always come from the pick (that is what was asked for);
+  /// the email only fills a field the user hasn't typed into, since a contact's
+  /// stored address is a guess at where the invitation should go.
+  Future<void> _pickFromContacts() async {
+    final loc = AppLocalizations.of(context)!;
+    final PickedContact? picked;
+    try {
+      picked = await widget.discovery.pickContact();
+    } on ContactPickDeniedException {
+      if (mounted) setState(() => _error = loc.invitePickDenied);
+      return;
+    } catch (_) {
+      if (mounted) setState(() => _error = loc.invitePickFailed);
+      return;
+    }
+    if (picked == null || !mounted) return; // cancelled
+    final contact = picked;
+    if (contact.phones.isEmpty) {
+      setState(() => _error = loc.invitePickNoNumber);
+      return;
+    }
+    final phone = contact.phones.length == 1
+        ? contact.phones.first
+        : await _chooseNumber(contact);
+    if (phone == null || !mounted) return;
+    final email = contact.email;
+    setState(() {
+      _error = null;
+      if (contact.name.isNotEmpty) _name.text = contact.name;
+      _phone.text = phone;
+      if (email != null && _email.text.trim().isEmpty) _email.text = email;
+    });
+  }
+
+  /// Which of a contact's numbers to invite. Only shown when there is a real
+  /// choice to make.
+  Future<String?> _chooseNumber(PickedContact picked) {
+    final loc = AppLocalizations.of(context)!;
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        color: Mod.surface,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(Mod.s6, Mod.s6, Mod.s6, Mod.s8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(loc.invitePickNumber, style: Mod.h2()),
+              if (picked.name.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(picked.name, style: Mod.meta(color: Mod.neutral700)),
+              ],
+              const SizedBox(height: Mod.s4),
+              for (final phone in picked.phones)
+                Semantics(
+                  button: true,
+                  label: phone,
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(phone),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border(bottom: BorderSide(color: Mod.rowDivider)),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: Mod.s4),
+                      child: ExcludeSemantics(
+                        child: Text(phone, style: Mod.name()),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _invite() async {
     final name = _name.text.trim();
     final phone = _phone.text.trim();
@@ -390,50 +473,84 @@ class _InviteSheetState extends State<_InviteSheet> {
       padding: EdgeInsets.only(bottom: bottom),
       child: Container(
         color: Mod.surface,
-        padding: const EdgeInsets.fromLTRB(Mod.s6, Mod.s6, Mod.s6, Mod.s8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(loc.inviteTitle, style: Mod.h2()),
-            const SizedBox(height: 2),
-            Text(loc.inviteInfo, style: Mod.meta(color: Mod.neutral700)),
-            const SizedBox(height: Mod.s4),
-            _field(loc.inviteName, _name, TextInputType.name),
-            const SizedBox(height: Mod.s3),
-            _field(loc.invitePhone, _phone, TextInputType.phone,
-                formatters: [_PlusPhoneFormatter()]),
-            const SizedBox(height: 5),
-            Text(loc.invitePhoneHint, style: Mod.meta(color: Mod.neutral700)),
-            const SizedBox(height: Mod.s3),
-            _field(loc.inviteEmail, _email, TextInputType.emailAddress),
-            const SizedBox(height: 5),
-            Text(loc.inviteEmailHint, style: Mod.meta(color: Mod.neutral700)),
-            if (_error != null) ...[
-              const SizedBox(height: Mod.s3),
-              Text(_error!, style: Mod.meta(color: Mod.accent)),
-            ],
-            const SizedBox(height: Mod.s6),
-            Semantics(
-              button: true,
-              label: loc.inviteTitle,
-              child: InkWell(
-                onTap: _invite,
-                child: Container(
-                  color: Mod.accent,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  alignment: Alignment.center,
-                  child: _sending
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Mod.bg),
-                        )
-                      : ExcludeSemantics(child: Text(loc.inviteTitle, style: Mod.button())),
+        // Scrollable: three fields, their hints, the pick button and an error
+        // line add up to more than a small phone has left over once the
+        // keyboard is up — and a form that overflows loses its own submit
+        // button.
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(Mod.s6, Mod.s6, Mod.s6, Mod.s8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(loc.inviteTitle, style: Mod.h2()),
+              const SizedBox(height: 2),
+              Text(loc.inviteInfo, style: Mod.meta(color: Mod.neutral700)),
+              const SizedBox(height: Mod.s4),
+              Semantics(
+                button: true,
+                label: loc.invitePickContact,
+                child: InkWell(
+                  onTap: _pickFromContacts,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Mod.bg,
+                      border: Border.all(color: Mod.text, width: 2),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: ExcludeSemantics(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.contacts_outlined, size: 20, color: Mod.text),
+                          const SizedBox(width: Mod.s2),
+                          Text(loc.invitePickContact,
+                              style: Mod.button(color: Mod.text)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: Mod.s4),
+              _field(loc.inviteName, _name, TextInputType.name),
+              const SizedBox(height: Mod.s3),
+              _field(loc.invitePhone, _phone, TextInputType.phone,
+                  formatters: [PlusPhoneFormatter()]),
+              const SizedBox(height: 5),
+              Text(loc.invitePhoneHint, style: Mod.meta(color: Mod.neutral700)),
+              const SizedBox(height: Mod.s3),
+              _field(loc.inviteEmail, _email, TextInputType.emailAddress),
+              const SizedBox(height: 5),
+              Text(loc.inviteEmailHint, style: Mod.meta(color: Mod.neutral700)),
+              if (_error != null) ...[
+                const SizedBox(height: Mod.s3),
+                Text(_error!, style: Mod.meta(color: Mod.accent)),
+              ],
+              const SizedBox(height: Mod.s6),
+              Semantics(
+                button: true,
+                label: loc.inviteTitle,
+                child: InkWell(
+                  onTap: _invite,
+                  child: Container(
+                    color: Mod.accent,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    alignment: Alignment.center,
+                    child: _sending
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child:
+                                CircularProgressIndicator(strokeWidth: 2, color: Mod.bg),
+                          )
+                        : ExcludeSemantics(
+                            child: Text(loc.inviteTitle, style: Mod.button())),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -482,7 +599,7 @@ class _ContactRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: Mod.s6, vertical: Mod.s3),
       child: Row(
         children: [
-          InitialsTile(name: contact.name),
+          InitialsTile(name: contact.name, imageUrl: contact.avatarUrl),
           const SizedBox(width: Mod.s3),
           Expanded(
             child: Text(contact.name,
@@ -540,21 +657,6 @@ class _ActionButton extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Keeps the phone field as a single leading "+" followed by digits only, so
-/// whatever the user types (extra "+", spaces, dashes) ends up as clean E.164.
-class _PlusPhoneFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
-    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
-    final text = '+$digits';
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

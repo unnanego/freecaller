@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:freecaller/l10n/app_localizations.dart';
 import '../../data/contact_discovery.dart';
@@ -14,11 +16,17 @@ class MainShell extends StatefulWidget {
     required this.profile,
     required this.recents,
     required this.names,
+    required this.avatars,
     required this.signInEmail,
     required this.discovery,
     required this.onCall,
     required this.onSignOut,
     required this.onSaveName,
+    required this.onSavePhone,
+    required this.onSaveAvatar,
+    required this.onRemoveAvatar,
+    required this.onRequestEmailChange,
+    required this.onConfirmEmailChange,
     required this.onReport,
     required this.onDeleteAccount,
   });
@@ -26,11 +34,17 @@ class MainShell extends StatefulWidget {
   final UserProfile profile;
   final List<CallDoc> recents;
   final ContactNames names;
+  final PeerAvatars avatars;
   final String? signInEmail;
   final ContactDiscoveryRepo discovery;
   final void Function(Contact contact, {required bool video}) onCall;
   final Future<void> Function() onSignOut;
   final Future<void> Function(String name) onSaveName;
+  final Future<void> Function(String phone) onSavePhone;
+  final Future<void> Function(Uint8List bytes, String filename) onSaveAvatar;
+  final Future<void> Function() onRemoveAvatar;
+  final Future<void> Function(String email) onRequestEmailChange;
+  final Future<void> Function(String code) onConfirmEmailChange;
   final Future<void> Function(String message) onReport;
   final Future<void> Function() onDeleteAccount;
 
@@ -52,6 +66,7 @@ class _MainShellState extends State<MainShell> {
           RecentsScreen(
             recents: widget.recents,
             names: widget.names,
+            avatars: widget.avatars,
             myUid: widget.profile.uid,
             onCall: widget.onCall,
           ),
@@ -62,6 +77,11 @@ class _MainShellState extends State<MainShell> {
             discovery: widget.discovery,
             onSignOut: widget.onSignOut,
             onSaveName: widget.onSaveName,
+            onSavePhone: widget.onSavePhone,
+            onSaveAvatar: widget.onSaveAvatar,
+            onRemoveAvatar: widget.onRemoveAvatar,
+            onRequestEmailChange: widget.onRequestEmailChange,
+            onConfirmEmailChange: widget.onConfirmEmailChange,
             onReport: widget.onReport,
             onDeleteAccount: widget.onDeleteAccount,
           ),

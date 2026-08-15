@@ -108,6 +108,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   CallOutcome _announcedOutcome = CallOutcome.none;
 
   StreamSubscription<UserProfile?>? _profileBootSub;
+  StreamSubscription<UserProfile?>? _profileSub;
   Timer? _bootTimeout;
   StreamSubscription<String?>? _signInEmailSub;
   StreamSubscription<List<Contact>>? _contactsSub;
@@ -249,6 +250,24 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     });
 
     _loadNames();
+    // Keep following the profile after bootstrap.
+    //
+    // The bootstrap listener above unsubscribes as soon as it has a profile —
+    // it exists to start the engine, once. Without this second subscription
+    // the owner's own record is a snapshot taken at launch, so everything they
+    // change about themselves in Settings (name, number, picture) saved to the
+    // server but went on showing the old value until the app was restarted.
+    // Everyone ELSE's details were always live, which made it look like their
+    // own edits were the ones that hadn't worked.
+    _profileSub = _s.users.watchProfile(widget.uid).listen(
+      (profile) {
+        if (profile == null || !mounted) return;
+        setState(() => _profile = profile);
+        // The name and number stamped on outgoing calls live in the engine.
+        _engine?.updateIdentity(name: profile.displayName, phone: profile.phone);
+      },
+      onError: (Object e) => log('profile stream error', error: e),
+    );
     // Surface the address a sign-in code gets mailed to, for Settings.
     _signInEmailSub = _s.users.watchSignInEmail().listen(
       (email) { if (mounted) setState(() => _signInEmail = email); },
@@ -369,6 +388,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     WidgetsBinding.instance.removeObserver(this);
     _bootTimeout?.cancel();
     _profileBootSub?.cancel();
+    _profileSub?.cancel();
     _signInEmailSub?.cancel();
     _contactsSub?.cancel();
     _siriSub?.cancel();
@@ -391,8 +411,21 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       }
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    // Everyone we know a picture for, from either source: the roster relation
+    // and address-book discovery. Names come from the phone's address book, but
+    // a picture is the person's own — so this is keyed by uid and shared by
+    // every screen that shows one.
+    final avatars = PeerAvatars({
+      for (final c in [..._contacts, ..._discovered])
+        if (c.avatarUrl.isNotEmpty) c.uid: c.avatarUrl,
+    });
     if (engine.phase == EnginePhase.dialing || engine.phase == EnginePhase.inCall) {
-      return InCallScreen(engine: engine, livekit: _s.livekit, names: _names);
+      return InCallScreen(
+        engine: engine,
+        livekit: _s.livekit,
+        names: _names,
+        avatars: avatars,
+      );
     }
     final profile = _profile;
     if (profile == null) {
@@ -402,11 +435,18 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       profile: profile,
       recents: _recents,
       names: _names,
+      avatars: avatars,
       signInEmail: _signInEmail,
       discovery: _s.discovery,
       onCall: (contact, {required video}) => engine.startCall(contact, video: video),
       onSignOut: _signOut,
       onSaveName: (name) => _s.users.updateDisplayName(profile.uid, name),
+      onSavePhone: (phone) => _s.users.updatePhone(profile.uid, phone),
+      onSaveAvatar: (bytes, filename) =>
+          _s.users.updateAvatar(profile.uid, bytes, filename),
+      onRemoveAvatar: () => _s.users.removeAvatar(profile.uid),
+      onRequestEmailChange: _s.users.requestEmailChange,
+      onConfirmEmailChange: _s.users.confirmEmailChange,
       onReport: (message) => _s.users.submitSafetyReport(profile.uid, message),
       onDeleteAccount: _deleteAccount,
     );

@@ -90,6 +90,8 @@
   "speakerOn": "Включить громкую связь",
   "speakerOff": "Выключить громкую связь",
   "switchCamera": "Сменить камеру",
+  "cameraOff": "Выключить камеру",
+  "cameraOn": "Включить камеру",
   "swapVideo": "Поменять видео местами",
   "mute": "Выключить микрофон",
   "unmute": "Включить микрофон",
@@ -156,6 +158,51 @@
   "sectionAccount": "АККАУНТ",
   "fieldDisplayName": "Имя",
   "fieldPhone": "Номер телефона",
+  "fieldPhoneHint": "По нему вас находят близкие, например +79161234567",
+  "profileSaved": "Сохранено",
+  "profileSaveFailed": "Не удалось сохранить. Попробуйте ещё раз.",
+  "photoTitle": "Фото профиля",
+  "photoAdd": "Добавить фото",
+  "photoChange": "Изменить фото",
+  "photoTake": "Сделать снимок",
+  "photoChoose": "Выбрать из галереи",
+  "photoRemove": "Удалить фото",
+  "photoCameraDenied": "Чтобы сделать снимок, разрешите доступ к камере в настройках телефона.",
+  "photoFailed": "Не удалось загрузить фото. Попробуйте ещё раз.",
+  "emailChangeRow": "Изменить почту",
+  "emailChangeTitle": "Новая почта",
+  "emailChangeInfo": "Мы пришлём код на новый адрес. Пока вы его не введёте, вход остаётся на старом.",
+  "emailChangeNew": "Новый адрес",
+  "emailChangeCurrent": "Сейчас: {email}",
+  "@emailChangeCurrent": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "emailChangeSend": "Прислать код",
+  "emailChangeCodeTitle": "Код из письма",
+  "emailChangeCodeInfo": "Код отправлен на {email}. Введите его здесь — код действует 15 минут.",
+  "@emailChangeCodeInfo": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "emailChangeCode": "Код",
+  "emailChangeConfirm": "Подтвердить",
+  "emailChangeBack": "Другой адрес",
+  "emailChanged": "Почта изменена на {email}",
+  "@emailChanged": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "emailChangeFailed": "Не удалось изменить почту. Попробуйте ещё раз.",
   "contactAccessRow": "Доступ к контактам",
   "safetyRow": "Безопасность детей",
   "safetyTitle": "Сообщить о проблеме",
@@ -188,6 +235,11 @@
   "inviteEmailHint": "На неё придёт код для входа, например name@mail.ru",
   "invitePhone": "Телефон",
   "invitePhoneHint": "В международном формате с кодом страны, например +79161234567",
+  "invitePickContact": "Выбрать из контактов",
+  "invitePickNumber": "Какой номер",
+  "invitePickNoNumber": "У этого контакта нет номера телефона. Введите его вручную.",
+  "invitePickDenied": "Чтобы выбрать контакт, разрешите приложению доступ к контактам в настройках телефона.",
+  "invitePickFailed": "Не удалось открыть контакты. Введите данные вручную.",
   "inviteFailed": "Не удалось пригласить. Проверьте номер и попробуйте снова.",
   "inviteSent": "Приглашение отправлено на {email}",
   "@inviteSent": {

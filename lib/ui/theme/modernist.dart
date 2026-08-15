@@ -122,23 +122,45 @@ String initialsOf(String name) {
 }
 
 /// The square, bordered initials/avatar tile used across the app.
+///
+/// Shows [imageUrl] when the person has a picture and falls back to their
+/// initials otherwise — including while the picture loads and if it fails, so a
+/// slow or unreachable server never leaves a hole in a list.
 class InitialsTile extends StatelessWidget {
-  const InitialsTile({super.key, required this.name, this.size = 46});
+  const InitialsTile({
+    super.key,
+    required this.name,
+    this.size = 46,
+    this.imageUrl = '',
+  });
 
   final String name;
   final double size;
+  final String imageUrl;
 
   @override
   Widget build(BuildContext context) {
+    final initials = Text(
+      initialsOf(name),
+      style: Mod.tileInitials(size * 0.33),
+    );
     return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(border: Border.all(color: Mod.divider, width: 2)),
-      child: Text(
-        initialsOf(name),
-        style: Mod.tileInitials(size * 0.33),
-      ),
+      child: imageUrl.isEmpty
+          ? initials
+          : Image.network(
+              imageUrl,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              loadingBuilder: (_, child, progress) =>
+                  progress == null ? child : initials,
+              errorBuilder: (_, _, _) => initials,
+            ),
     );
   }
 }

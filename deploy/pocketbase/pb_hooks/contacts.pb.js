@@ -4,7 +4,8 @@
 // `inviteContact` callable Cloud Functions.
 //
 //   POST /api/freecaller/match-contacts  {"phones": ["+7…", …]}
-//     -> {"matches": [{"uid": …, "displayName": …, "phone": "+7…"}, …]}
+//     -> {"matches": [{"uid": …, "displayName": …, "phone": "+7…",
+//                      "avatar": "photo.jpg"|""}, …]}
 //
 //   POST /api/freecaller/invite  {"name": …, "phone": "+7…", "email": …}
 //     -> {"uid": …, "email": …, "emailed": true|false}   409 if either the
@@ -82,6 +83,10 @@ routerAdd(
           uid: users[i].id,
           displayName: users[i].get("displayName"),
           phone: e164,
+          // Just the stored filename; the app builds the /api/files URL from
+          // the server it is already talking to, rather than depending on the
+          // dashboard's appURL setting being right.
+          avatar: users[i].get("avatar") || "",
         })
       }
     }
