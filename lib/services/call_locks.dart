@@ -29,16 +29,36 @@ class CallLocks {
   /// only thing that can move the audio while Telecom owns the route. It defers
   /// to a connected headset either way.
   ///
-  /// Returns the platform's account of what it did, for the log; null off
-  /// Android or when the call failed.
+  /// iOS has its own handler on this channel (AppDelegate): CallKit hands the
+  /// call a fresh AVAudioSession whose route is decided without reference to
+  /// what the WebRTC plugin asked for, so the speaker has to be overridden on
+  /// the session itself. This used to return early off Android, which is why a
+  /// speaker chosen before connecting was ignored there — the native override
+  /// was never even attempted.
+  ///
+  /// Returns the platform's account of what it did, for the log; null when the
+  /// call failed or the platform has no handler.
   Future<String?> setSpeaker(bool on, {String? callId}) async {
-    if (defaultTargetPlatform != TargetPlatform.android) return null;
     try {
       return await _channel
           .invokeMethod<String>('setSpeaker', {'on': on, 'callId': callId});
     } catch (e) {
       log('native setSpeaker($on) failed', error: e);
       return null;
+    }
+  }
+
+  /// Keep the screen awake for as long as [on].
+  ///
+  /// Video only, at the call screen's discretion: a voice call blanks the
+  /// screen against the ear by proximity instead, and on Android the two
+  /// mechanisms fight — FLAG_KEEP_SCREEN_ON wins over the proximity wake lock
+  /// and would leave the screen lit against someone's cheek.
+  Future<void> setKeepScreenOn(bool on) async {
+    try {
+      await _channel.invokeMethod<void>('setKeepScreenOn', {'on': on});
+    } catch (e) {
+      log('call locks: setKeepScreenOn($on) failed', error: e);
     }
   }
 

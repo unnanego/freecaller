@@ -78,12 +78,14 @@ class CallKitCallUi implements CallUi {
         _emit(CallUiEvent(CallUiEventType.accept, callId: callKitParams.id));
       case CallEventActionCallDecline(:final callKitParams):
         _pluginCalls.remove(callKitParams.id);
+        if (_swallowEcho(callKitParams.id)) return;
         _emit(CallUiEvent(CallUiEventType.decline, callId: callKitParams.id));
       case CallEventActionCallEnded(:final callKitParams):
         // The native side has already torn this one down — forget it, or the
         // teardown that follows would broadcast another end and be told about
         // it again, round and round.
         _pluginCalls.remove(callKitParams.id);
+        if (_swallowEcho(callKitParams.id)) return;
         _emit(CallUiEvent(CallUiEventType.ended, callId: callKitParams.id));
       case CallEventActionCallTimeout(:final id):
         _pluginCalls.remove(id);
@@ -160,6 +162,21 @@ class CallKitCallUi implements CallUi {
   // gone.
   final _pluginCalls = <String>{};
 
+  /// Calls this side ended programmatically ([end]/[dismiss]) whose
+  /// CXEndCallAction will echo back as an `ended`/`decline` event. Those echoes
+  /// must not reach the engine: it treats an ended event for a foreign id as a
+  /// decline to write and a native call to clear, and during an answer that
+  /// chain used to hang up the live call. Lowercased, because CallKit reports
+  /// UUIDs in whatever case it likes.
+  final _endedByUs = <String>{};
+
+  bool _swallowEcho(String id) {
+    final swallowed = _endedByUs.remove(id.toLowerCase());
+    // Never allowed to grow without bound if an echo never arrives.
+    if (_endedByUs.length > 8) _endedByUs.clear();
+    return swallowed;
+  }
+
   @override
   Future<void> showIncoming(CallDisplay call) {
     _pluginCalls.add(call.callId);
@@ -187,11 +204,13 @@ class CallKitCallUi implements CallUi {
   Future<void> end(String callId, EndReason reason) async {
     final wasPlugin = _pluginCalls.remove(callId);
     // iOS incoming calls are reported by the native PushKit handler, not via
-    // Dart showIncoming — so their callId is never in _pluginCalls. Clear
-    // CallKit unconditionally on iOS or the native screen lingers after the
-    // call ends. Only ever one call at a time, so endAllCalls is safe.
+    // Dart showIncoming — so their callId is never in _pluginCalls; end by id
+    // unconditionally there. By id, NOT endAllCalls: with simultaneous-call
+    // glare two CallKit calls exist at once, and endAllCalls here hung up the
+    // live one whenever anything ended a stale id.
     if (Platform.isIOS) {
-      await FlutterCallkitIncoming.endAllCalls();
+      _endedByUs.add(callId.toLowerCase());
+      await FlutterCallkitIncoming.endCall(callId);
       return;
     }
     if (wasPlugin) await FlutterCallkitIncoming.endCall(callId);
@@ -200,6 +219,7 @@ class CallKitCallUi implements CallUi {
   @override
   Future<void> dismiss(String callId) async {
     _pluginCalls.remove(callId);
+    _endedByUs.add(callId.toLowerCase());
     // Strictly by id. This used to follow up with endAllCalls() to guarantee
     // the full-screen activity and ringtone went away, but a cancel push is
     // only ordered relative to its own call: on a slow link the cancel for the
@@ -211,7 +231,14 @@ class CallKitCallUi implements CallUi {
 
   @override
   Future<List<CallDisplay>> activeCalls() async {
-    final calls = await FlutterCallkitIncoming.activeCalls();
+    var calls = await FlutterCallkitIncoming.activeCalls();
+    // iOS reports CXCallObserver.calls — the SYSTEM's list, which includes
+    // cellular and other apps' CallKit calls. Those come back as bare ids with
+    // no caller name (ours always carry one); acting on them — above all the
+    // stale-call sweep dismissing one — would end a call this app doesn't own.
+    if (Platform.isIOS) {
+      calls = calls.where((call) => call.nameCaller != null).toList();
+    }
     // Cold start: these are live natively but were registered by a process (or
     // an isolate) that is gone. Adopt them so the reconciliation in
     // CallEngine.init can actually end the dead ones.
@@ -235,18 +262,26 @@ class CallKitCallUi implements CallUi {
 
   @override
   Future<void> endStaleCalls(String keepCallId) async {
-    // Android only, and deliberately so. An answered call there is a
-    // self-managed Telecom call; one that was never disconnected leaves the
-    // whole PHONE in a call — other apps refuse to dial, and Telecom keeps
-    // ownership of the audio route, so the speaker button does nothing for
-    // every call that follows, incoming or outgoing. iOS ends every call
-    // CallKit holds on each teardown (see [end]) so it has no equivalent
-    // leftover, and its active-call list can report an id in a different case
-    // than we registered it — a sweep there could hang up the call being
-    // answered.
-    if (!Platform.isAndroid) return;
+    // Both platforms now, for the same reason from opposite directions.
+    //
+    // Android: an answered call is a self-managed Telecom call, and one that
+    // was never disconnected leaves the whole PHONE in a call — other apps
+    // refuse to dial, and Telecom keeps the audio route, so the speaker button
+    // does nothing for every call that follows.
+    //
+    // iOS was excluded because [end] there is endAllCalls, on the assumption
+    // that only one call ever exists. Two do, whenever both sides ring each
+    // other at once: answering theirs leaves OUR outgoing CallKit call
+    // registered (retiring it must not endAllCalls, or it hangs up the call
+    // being answered), and that leftover keeps its ringtone audible under the
+    // live call and eventually takes the audio session down with it.
+    //
+    // The id comparison is case-insensitive: CallKit reports UUIDs in a
+    // different case than we registered them, which is what made a sweep here
+    // risk hanging up the very call being answered.
+    final keep = keepCallId.toLowerCase();
     for (final call in await activeCalls()) {
-      if (call.callId == keepCallId) continue;
+      if (call.callId.toLowerCase() == keep) continue;
       log('ending stale native call ${call.callId}');
       // Worth a line to the server: finding one here means a previous call was
       // never ended, which is the whole reason the speaker went dead — and on

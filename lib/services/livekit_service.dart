@@ -211,6 +211,21 @@ class LiveKitService {
     if (defaultTargetPlatform == TargetPlatform.android) _applyRoute();
   }
 
+  /// Re-apply the desired route because the platform has just handed us a NEW
+  /// audio session — on iOS, CallKit activating one.
+  ///
+  /// Deliberately not gated to Android like [_reassertRoute]. That one fires on
+  /// events that merely MIGHT have disturbed the route, which on iOS means
+  /// rebuilding the session for nothing (audible as a click). This one fires
+  /// only when the session the route was applied to has been replaced, so the
+  /// choice genuinely is gone: the speaker turned on while "Соединение…" was up
+  /// was applied to a session CallKit then swapped out from under it, which is
+  /// exactly the "speaker ignored if enabled before connecting" report.
+  ///
+  /// No-op before the room exists — [connect] applies the route itself, so a
+  /// session activated before then is already covered.
+  Future<void> reapplyRoute() => _applyRoute();
+
   /// The default route for a call of this mode: voice to the earpiece, video to
   /// the speaker. Called before connecting, so that a toggle pressed while the
   /// call is still connecting overrides it instead of being overwritten by it.

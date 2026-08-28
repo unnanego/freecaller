@@ -15,6 +15,7 @@ import flutter_callkit_incoming
   static let contactsFile = "contacts.json"
 
   private var intentsChannel: FlutterMethodChannel?
+  private var locksChannel: FlutterMethodChannel?
   private var pushRegistry: PKPushRegistry?
 
   // Siri can launch the app before the Dart listener attaches; buffer the
@@ -63,6 +64,86 @@ import flutter_callkit_incoming
       }
     }
     intentsChannel = channel
+
+    // The same channel MainActivity answers on Android. Dart's _applyRoute
+    // calls it on every route change and iOS used to have no handler at all,
+    // so the reply was MissingPluginException, swallowed in call_locks.dart:
+    // the speaker on this platform rested entirely on what the WebRTC plugin
+    // asked for, and CallKit hands out a fresh AVAudioSession whose route is
+    // decided without reference to it. That is the "speaker turned on before
+    // connecting is ignored" report, and why turning it on mid-call worked.
+    // Only setSpeaker is handled: acquire/release are Android Wi-Fi/CPU locks
+    // and Dart never sends them off Android (CallLocks._invoke gates them).
+    //
+    // overrideOutputAudioPort is the supported way to move a live call's audio
+    // to the speaker, and it has to be applied to the session CallKit actually
+    // activated — hence Dart re-applying on audioSessionActivated.
+    let locks = FlutterMethodChannel(
+      name: "freecaller/call_locks",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger())
+    locks.setMethodCallHandler { call, result in
+      switch call.method {
+      case "setSpeaker":
+        let on = (call.arguments as? [String: Any])?["on"] as? Bool ?? false
+        result(AppDelegate.setSpeaker(on))
+      case "setKeepScreenOn":
+        let on = (call.arguments as? [String: Any])?["on"] as? Bool ?? false
+        // Video calls only (the Dart side decides): a phone left dimming
+        // mid-video-call is the whole complaint, while a voice call blanks
+        // itself against the ear and must go on doing so.
+        UIApplication.shared.isIdleTimerDisabled = on
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    locksChannel = locks
+  }
+
+  /// Move call audio to the speaker (or back), returning what happened.
+  ///
+  /// Same contract as the Android path in MainActivity: a headset the user is
+  /// wearing outranks the speaker button (blasting a call out of the
+  /// loudspeaker over AirPods is worse than ignoring the toggle), and a route
+  /// that is already where it was asked to be is left alone — the override
+  /// rebuilds the audio session, audible as a click, and this can be called
+  /// repeatedly (every session activation re-applies the desired route).
+  ///
+  /// The returned string is a debug-log account only. DiagnosticsRepo is
+  /// deliberately Android-only (its privacy note explains why), so unlike the
+  /// Android path nothing here reaches the server.
+  static func setSpeaker(_ on: Bool) -> String {
+    let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType }
+    let external: Set<AVAudioSession.Port> = [
+      .headphones, .bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .usbAudio,
+      .carAudio, .airPlay,
+    ]
+    let before = AppDelegate.routeDescription()
+    if outputs.contains(where: { external.contains($0) }) {
+      return "iOS left on external device (\(before))"
+    }
+    if on == outputs.contains(.builtInSpeaker) {
+      return "iOS already \(on ? "on" : "off") speaker (\(before))"
+    }
+    let session = RTCAudioSession.sharedInstance()
+    session.lockForConfiguration()
+    defer { session.unlockForConfiguration() }
+    do {
+      try session.overrideOutputAudioPort(on ? .speaker : .none)
+      return "iOS override=\(on ? "speaker" : "none") | before: \(before)"
+        + " | after: \(AppDelegate.routeDescription())"
+    } catch {
+      return "iOS override=\(on ? "speaker" : "none") FAILED: \(error.localizedDescription)"
+        + " | route: \(AppDelegate.routeDescription())"
+    }
+  }
+
+  /// Where the audio actually is, by port type — "builtInSpeaker",
+  /// "builtInReceiver" (the earpiece), a headset, and so on.
+  static func routeDescription() -> String {
+    let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+    let names = outputs.map { $0.portType.rawValue }.joined(separator: ", ")
+    return names.isEmpty ? "none" : names
   }
 
   // MARK: - Siri (INStartCallIntent → Dart)

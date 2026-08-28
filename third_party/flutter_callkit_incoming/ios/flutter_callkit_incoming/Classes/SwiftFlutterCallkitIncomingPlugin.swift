@@ -44,6 +44,16 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private let devicePushTokenVoIP = "DevicePushTokenVoIP"
 
     
+    /// The event payload for a call known only by uuid: the full stored data
+    /// when it is that call, otherwise just the id — enough for Dart to route
+    /// the event, and never another call's identity.
+    private func eventBody(for uuid: UUID) -> [String: Any?] {
+        if let stored = self.data, stored.uuid.lowercased() == uuid.uuidString.lowercased() {
+            return stored.toJSON()
+        }
+        return ["id": uuid.uuidString.lowercased()]
+    }
+
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
         if silenceEvents {
             print(event, " silenced")
@@ -128,17 +138,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             result(true)
             break
         case "endCall":
-            guard let args = call.arguments else {
-                result(true)
-                return
-            }
-            if(self.isFromPushKit){
-                self.endCall(self.data!)
-            }else{
-                if let getArgs = args as? [String: Any] {
-                    self.data = Data(args: getArgs)
-                    self.endCall(self.data!)
-                }
+            // Always end the call the caller NAMED. The old isFromPushKit branch
+            // discarded the argument and ended self.data (the PushKit ring), so
+            // ending a stale call while answering ended the answered call instead.
+            if let getArgs = call.arguments as? [String: Any] {
+                self.endCall(Data(args: getArgs))
+            } else if let stored = self.data {
+                self.endCall(stored)
             }
             result(true)
             break
@@ -393,28 +399,22 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     @objc public func endCall(_ data: Data) {
-        // Guard against malformed UUID — see CallManager.swift:startCall for rationale.
-        // PushKit branch reads uuid from self.data (stored during showCallkitIncoming);
-        // non-PushKit reads from the incoming data. Either source can be invalid.
-        let uuidSourceString: String
-        if self.isFromPushKit {
-            guard let stored = self.data else {
-                NSLog("[CallkitIncoming] endCall: PushKit branch but self.data is nil — ignored")
-                return
-            }
-            uuidSourceString = stored.uuid
-            self.isFromPushKit = false
-            self.sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, data.toJSON())
-        } else {
-            uuidSourceString = data.uuid
-        }
-        guard let uuid = UUID(uuidString: uuidSourceString) else {
-            NSLog("[CallkitIncoming] endCall: invalid UUID '\(uuidSourceString)' — ignored")
+        // Ends exactly the call in `data`. The old version redirected to
+        // self.data whenever isFromPushKit was set, which made every
+        // programmatic end target the PushKit ring regardless of the argument.
+        guard let uuid = UUID(uuidString: data.uuid) else {
+            NSLog("[CallkitIncoming] endCall: invalid UUID '\(data.uuid)' — ignored")
             return
         }
+        if self.isFromPushKit, let stored = self.data,
+           stored.uuid.lowercased() == data.uuid.lowercased() {
+            // Ending the PushKit-reported ring itself: clear the flag and tell
+            // Dart directly, since this call may never round-trip through the
+            // CXEndCallAction handler.
+            self.isFromPushKit = false
+            self.sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, data.toJSON())
+        }
         let call = Call(uuid: uuid, data: data)
-
-
         self.callManager.endCall(call: call)
     }
     
@@ -700,10 +700,14 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             // TIMEOUT) so the app can notify its backend and stop ringing elsewhere.
             // Fulfill (not fail) the action: failing a legitimate end action leaves
             // a stale call in the system UI.
+            // The event must name the call this action is FOR. self.data is
+            // whatever call was reported last (usually the live one), so using
+            // it here told Dart the wrong call ended — and ending a stale call
+            // during an answer read as "the live call ended".
             if(self.answerCall == nil && self.outgoingCall == nil){
-                sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_DECLINE, self.data?.toJSON())
+                sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_DECLINE, self.eventBody(for: action.callUUID))
             } else {
-                sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, self.data?.toJSON())
+                sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, self.eventBody(for: action.callUUID))
             }
             action.fulfill()
             return
@@ -711,7 +715,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         call.endCall()
         self.callManager.removeCall(call)
         if (self.answerCall == nil && self.outgoingCall == nil) {
-            sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_DECLINE, self.data?.toJSON())
+            sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_DECLINE, call.data.toJSON())
             if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                 appDelegate.onDecline(call, action)
             } else {

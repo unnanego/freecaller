@@ -9,6 +9,7 @@ import 'package:proximity_sensor/proximity_sensor.dart';
 import '../data/contact_discovery.dart';
 import '../data/models.dart';
 import '../services/call_engine.dart';
+import '../services/call_locks.dart';
 import '../services/livekit_service.dart';
 import 'theme/modernist.dart';
 
@@ -56,6 +57,8 @@ class _InCallScreenState extends State<InCallScreen> {
   Timer? _timer;
   StreamSubscription<int>? _proximitySub;
   bool _proximityOn = false;
+  final CallLocks _locks = CallLocks();
+  bool _keepAwake = false;
   // Video chrome (name/timer + controls) auto-hides a few seconds after it
   // appears and comes back on tap, like the native call apps.
   bool _controlsVisible = true;
@@ -71,6 +74,9 @@ class _InCallScreenState extends State<InCallScreen> {
     _hideTimer?.cancel();
     _proximitySub?.cancel();
     ProximitySensor.setProximityScreenOff(false).catchError((Object _) {});
+    // Leaving the call screen with the flag still set would keep the phone
+    // awake for good.
+    _syncKeepAwake(false);
     super.dispose();
   }
 
@@ -108,6 +114,18 @@ class _InCallScreenState extends State<InCallScreen> {
         await ProximitySensor.setProximityScreenOff(false);
       }
     } catch (_) {}
+  }
+
+  /// Hold the screen awake for a video call, and let it go afterwards.
+  ///
+  /// Nothing was doing this: the locks a call takes are for the CPU and the
+  /// Wi-Fi radio, so a video call dimmed and then slept in the user's hand like
+  /// any idle screen. Voice is deliberately excluded — there the screen is
+  /// supposed to blank against the ear (see [_syncProximity]).
+  void _syncKeepAwake(bool wantOn) {
+    if (wantOn == _keepAwake) return;
+    _keepAwake = wantOn;
+    _locks.setKeepScreenOn(wantOn);
   }
 
   /// Run a repaint tick for as long as we're connected.
@@ -150,6 +168,7 @@ class _InCallScreenState extends State<InCallScreen> {
         : widget.names.resolve(session.peerUid, session.peerName);
     final isVideo = session?.isVideo ?? false;
     _syncProximity(!isVideo); // voice → screen-off near ear; video → keep on
+    _syncKeepAwake(isVideo); // …and video must not dim while it is being watched
     final dialing = engine.phase == EnginePhase.dialing;
     // Full spoken status for VoiceOver; the visual pieces are decoration.
     final spoken = dialing ? loc.dialing(name) : loc.inCallWith(name);

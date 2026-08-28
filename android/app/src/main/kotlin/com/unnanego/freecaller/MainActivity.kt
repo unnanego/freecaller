@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.telecom.CallAudioState
 import android.util.Log
+import android.view.WindowManager
 import com.hiennv.flutter_callkit_incoming.CallkitConnection
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -43,6 +44,10 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "acquire" -> { acquireLocks(); result.success(null) }
                     "release" -> { releaseLocks(); result.success(null) }
+                    "setKeepScreenOn" -> {
+                        setKeepScreenOn(call.argument<Boolean>("on") ?: false)
+                        result.success(null)
+                    }
                     "setSpeaker" -> {
                         val outcome = setSpeaker(
                             call.argument<Boolean>("on") ?: false,
@@ -298,6 +303,19 @@ class MainActivity : FlutterActivity() {
             "telecom setAudioRoute(${if (on) "speaker" else "earpiece"}) was=$current"
         } catch (e: Exception) {
             "telecom setAudioRoute failed: ${e.message}"
+        }
+    }
+
+    // Hold the screen awake for a video call. Not for voice: there the screen is
+    // deliberately blanked against the ear by the proximity wake lock, and this
+    // flag outranks it — the screen would stay lit against a cheek.
+    private fun setKeepScreenOn(on: Boolean) {
+        runOnUiThread {
+            if (on) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
         }
     }
 

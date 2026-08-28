@@ -116,7 +116,10 @@ class CallManager: NSObject {
             let callItem = self.callWithUUID(uuid: call.uuid)
             if(callItem != nil){
                 var item: [String: Any] = callItem!.data.toJSON()
-                item["accepted"] = callItem?.hasConnected
+                // Key must match CallKitParams.fromJson, which reads `isAccepted` —
+                // `accepted` was silently dropped, so a cold start could never see
+                // that a call had already been answered.
+                item["isAccepted"] = callItem?.hasConnected
                 json.append(item)
             }else {
                 let item: [String: String] = ["id": call.uuid.uuidString]

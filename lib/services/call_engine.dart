@@ -405,9 +405,25 @@ class CallEngine extends ChangeNotifier {
         // it is ringing this one — and on iOS "end that call" is
         // CXEndCallAction on everything CallKit holds, which would hang up the
         // call being answered right here.
+        //
+        // A DIALING session here is the glare case: both sides rang each other
+        // at once and this side is answering theirs. That outgoing call of ours
+        // is still ringing on their phone, and nothing else will ever stop it —
+        // writing nothing left it ringing under the live call until the 45s
+        // sweep, which is the "the other call doesn't get cancelled" report.
+        // `cancelled` is the state the caller owns, and it pushes the peer a
+        // cancel so their ring stops now.
         await _teardown(
           CallOutcome.none,
-          writeState: _phase == EnginePhase.inCall ? CallState.ended : null,
+          writeState: switch (_phase) {
+            EnginePhase.inCall => CallState.ended,
+            EnginePhase.dialing => CallState.cancelled,
+            // A second ring being abandoned for this one: decline it, or ITS
+            // caller rings on to the 45s sweep — same bug as dialing, one
+            // phase over.
+            EnginePhase.incoming => CallState.declined,
+            EnginePhase.idle => null,
+          },
           endNativeCall: false,
         );
       }
@@ -486,6 +502,11 @@ class CallEngine extends ChangeNotifier {
         // Honor mute — this can re-fire mid-call (route changes) and must not
         // silently un-mute the user.
         _livekit.setMicEnabled(!_muted);
+        // The session that the speaker choice was applied to has just been
+        // replaced by this one, so apply it again — otherwise a call answered
+        // (or placed) with the speaker already on comes up on the earpiece,
+        // and a video call's audio does the same.
+        _livekit.reapplyRoute();
       case CallUiEventType.audioSessionDeactivated:
       case CallUiEventType.voipTokenUpdated:
         break;
