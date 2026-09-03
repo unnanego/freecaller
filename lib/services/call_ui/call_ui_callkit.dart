@@ -162,20 +162,25 @@ class CallKitCallUi implements CallUi {
   // gone.
   final _pluginCalls = <String>{};
 
-  /// Calls this side ended programmatically ([end]/[dismiss]) whose
-  /// CXEndCallAction will echo back as an `ended`/`decline` event. Those echoes
-  /// must not reach the engine: it treats an ended event for a foreign id as a
-  /// decline to write and a native call to clear, and during an answer that
-  /// chain used to hang up the live call. Lowercased, because CallKit reports
-  /// UUIDs in whatever case it likes.
+  /// Calls this side retired via [end], whose CXEndCallAction will echo back as
+  /// an `ended`/`decline` event. Those echoes must not reach the engine: it
+  /// treats an ended event for a foreign id as a decline to write and a native
+  /// call to clear, and during an answer that chain used to hang up the live
+  /// call. Lowercased, because CallKit reports UUIDs in whatever case it likes.
+  ///
+  /// [dismiss] deliberately does NOT register here — see the note there.
   final _endedByUs = <String>{};
 
-  bool _swallowEcho(String id) {
-    final swallowed = _endedByUs.remove(id.toLowerCase());
-    // Never allowed to grow without bound if an echo never arrives.
-    if (_endedByUs.length > 8) _endedByUs.clear();
-    return swallowed;
+  /// Expect one echo for [callId] and swallow it when it arrives.
+  void _expectEcho(String callId) {
+    // Bounded on INSERT, not while consuming: clearing inside [_swallowEcho]
+    // could throw away the entry for an end whose own echo was still in flight,
+    // and that echo then reached the engine as a real one.
+    if (_endedByUs.length >= 8) _endedByUs.clear();
+    _endedByUs.add(callId.toLowerCase());
   }
+
+  bool _swallowEcho(String id) => _endedByUs.remove(id.toLowerCase());
 
   @override
   Future<void> showIncoming(CallDisplay call) {
@@ -209,7 +214,7 @@ class CallKitCallUi implements CallUi {
     // glare two CallKit calls exist at once, and endAllCalls here hung up the
     // live one whenever anything ended a stale id.
     if (Platform.isIOS) {
-      _endedByUs.add(callId.toLowerCase());
+      _expectEcho(callId);
       await FlutterCallkitIncoming.endCall(callId);
       return;
     }
@@ -219,7 +224,12 @@ class CallKitCallUi implements CallUi {
   @override
   Future<void> dismiss(String callId) async {
     _pluginCalls.remove(callId);
-    _endedByUs.add(callId.toLowerCase());
+    // No _expectEcho here, deliberately. Unlike [end], this retires a call the
+    // engine never adopted — a ring the sweep found still up — and the native
+    // decline that comes back is the ONLY thing that tells the engine to write
+    // `declined` for it. Swallowing that echo left the ring `ringing` on the
+    // server and its caller listening to ringback until the 45s sweep.
+    //
     // Strictly by id. This used to follow up with endAllCalls() to guarantee
     // the full-screen activity and ringtone went away, but a cancel push is
     // only ordered relative to its own call: on a slow link the cancel for the

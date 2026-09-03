@@ -119,7 +119,14 @@ class CallManager: NSObject {
                 // Key must match CallKitParams.fromJson, which reads `isAccepted` —
                 // `accepted` was silently dropped, so a cold start could never see
                 // that a call had already been answered.
-                item["isAccepted"] = callItem?.hasConnected
+                //
+                // OR, not a plain assignment: `data.isAccepted` is set by the
+                // CXAnswerCallAction handler and is the only signal a PushKit
+                // ring ever gets, because `hasConnected` needs a callConnected
+                // round-trip from Dart that never happens for calls the native
+                // side reported. Overwriting the first with the second reported
+                // every natively-answered call as unanswered.
+                item["isAccepted"] = callItem!.data.isAccepted || callItem!.hasConnected
                 json.append(item)
             }else {
                 let item: [String: String] = ["id": call.uuid.uuidString]

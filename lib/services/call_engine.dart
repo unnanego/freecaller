@@ -411,19 +411,10 @@ class CallEngine extends ChangeNotifier {
         // is still ringing on their phone, and nothing else will ever stop it —
         // writing nothing left it ringing under the live call until the 45s
         // sweep, which is the "the other call doesn't get cancelled" report.
-        // `cancelled` is the state the caller owns, and it pushes the peer a
-        // cancel so their ring stops now.
+        // An abandoned incoming ring is the same bug one phase over.
         await _teardown(
           CallOutcome.none,
-          writeState: switch (_phase) {
-            EnginePhase.inCall => CallState.ended,
-            EnginePhase.dialing => CallState.cancelled,
-            // A second ring being abandoned for this one: decline it, or ITS
-            // caller rings on to the 45s sweep — same bug as dialing, one
-            // phase over.
-            EnginePhase.incoming => CallState.declined,
-            EnginePhase.idle => null,
-          },
+          writeState: _ownedTerminalState(_phase),
           endNativeCall: false,
         );
       }
@@ -460,14 +451,29 @@ class CallEngine extends ChangeNotifier {
 
   // ---------------------------------------------------------------- shared
 
+  /// The terminal state this side owes the call doc when it walks away while in
+  /// [phase]. The server's legal transitions are mirrored here and nowhere
+  /// else: hangUp and the glare retirement in [_accept] both read this table,
+  /// so they cannot drift into writing a state the server rejects — which would
+  /// leave the peer ringing to the 45s sweep.
+  static CallState? _ownedTerminalState(EnginePhase phase) => switch (phase) {
+        EnginePhase.dialing => CallState.cancelled,
+        EnginePhase.inCall => CallState.ended,
+        EnginePhase.incoming => CallState.declined,
+        EnginePhase.idle => null,
+      };
+
   Future<void> hangUp() async {
     switch (_phase) {
       case EnginePhase.dialing:
-        await _teardown(CallOutcome.none, writeState: CallState.cancelled);
+        await _teardown(CallOutcome.none,
+            writeState: _ownedTerminalState(_phase));
       case EnginePhase.inCall:
-        await _teardown(CallOutcome.ended, writeState: CallState.ended);
+        await _teardown(CallOutcome.ended,
+            writeState: _ownedTerminalState(_phase));
       case EnginePhase.incoming:
-        await _teardown(CallOutcome.none, writeState: CallState.declined);
+        await _teardown(CallOutcome.none,
+            writeState: _ownedTerminalState(_phase));
       case EnginePhase.idle:
         break;
     }
@@ -641,7 +647,22 @@ class CallEngine extends ChangeNotifier {
         await _calls.setState(session.callId, writeState,
             endedBy: writeState == CallState.ended ? _myUid : null);
       } catch (e) {
+        // The state this side owns can be stale by the time it is written: in
+        // glare the peer may have accepted our outgoing call in the gap between
+        // the last watch tick and this write, and `accepted -> cancelled` is
+        // illegal server-side. Logging and moving on left the doc `accepted`
+        // with nobody in the room — nothing sweeps that, so the peer sat alone
+        // until they hung up. Re-read and close it with the legal transition.
         log('teardown state write failed', error: e);
+        try {
+          final doc = await _calls.getCall(session.callId);
+          if (doc?.state == CallState.accepted && writeState != CallState.ended) {
+            await _calls.setState(session.callId, CallState.ended,
+                endedBy: _myUid);
+          }
+        } catch (e2) {
+          log('teardown state recovery failed', error: e2);
+        }
       }
     }
     // Clear any speaker-route override while the session is still live, so the
@@ -656,6 +677,14 @@ class CallEngine extends ChangeNotifier {
     await _locks.release();
     if (session != null && endNativeCall) {
       await _callUi.end(session.callId, EndReason.local);
+      // …and anything else the native layer is still holding. Ending strictly
+      // by id leaves a call the engine never adopted — a glare ring whose
+      // cancel push never arrived — registered for good, because the sweep
+      // otherwise runs only at the START of the next call. Until then the
+      // system still believes the phone is in a call: on iOS that makes CallKit
+      // refuse the next incoming report outright. Nothing to keep here, the
+      // call is over.
+      await _clearStaleNativeCalls('');
     }
     // Cue that a connected call has dropped (not for unanswered/declined rings).
     // Fire-and-forget: it self-delays for the session to settle, so awaiting it

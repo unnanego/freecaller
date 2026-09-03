@@ -165,6 +165,11 @@ class LiveKitService {
     if (room.remoteParticipants.isNotEmpty) _peerJoined.add(null);
   }
 
+  /// The value last handed to the SDK, so an unchanged one need not be pushed
+  /// again on iOS. Cleared with the room: a new call gets a new session, and
+  /// the preference has to be asserted onto it from scratch.
+  bool? _sdkSpeakerPreference;
+
   /// Push [speakerOn] onto the platform. Safe to call repeatedly — it is meant
   /// to be, since each call is a correction of whatever the audio session just
   /// decided on its own.
@@ -179,7 +184,20 @@ class LiveKitService {
       // the speaker over a connected headset at the SDK level would contradict
       // the native path below, which deliberately leaves the audio on a headset
       // the call is actually going through.
-      await AudioManager.instance.setSpeakerOutputPreferred(speakerOn.value);
+      //
+      // Skipped on iOS when the preference has not changed. There this call is
+      // a full session rebuild (setConfiguration + setActive + its own port
+      // override) and it runs BEFORE the native step below, so the "already on
+      // that route" / "left on external device" guards there can never prevent
+      // it — a re-apply for an unchanged value is exactly the click
+      // [_reassertRoute] says iOS must not pay. Android has to repeat it: the
+      // output devices are enumerated late, so the same value must be pushed
+      // again once the speaker actually exists.
+      if (defaultTargetPlatform == TargetPlatform.android ||
+          _sdkSpeakerPreference != speakerOn.value) {
+        _sdkSpeakerPreference = speakerOn.value;
+        await AudioManager.instance.setSpeakerOutputPreferred(speakerOn.value);
+      }
       // …then the platform API directly, which is what actually moves the audio
       // on OEM builds that ignore what the SDK asked for.
       final native = await _locks.setSpeaker(speakerOn.value, callId: _roomCallId);
@@ -299,6 +317,7 @@ class LiveKitService {
     final room = _room;
     _room = null;
     _roomCallId = null;
+    _sdkSpeakerPreference = null;
     remoteVideo.value = null;
     localVideo.value = null;
     await _listener?.dispose();

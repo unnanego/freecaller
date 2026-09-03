@@ -408,11 +408,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         }
         if self.isFromPushKit, let stored = self.data,
            stored.uuid.lowercased() == data.uuid.lowercased() {
-            // Ending the PushKit-reported ring itself: clear the flag and tell
-            // Dart directly, since this call may never round-trip through the
-            // CXEndCallAction handler.
+            // Ending the PushKit-reported ring itself: clear the flag so the
+            // stored ring stops standing in for later calls. No event here —
+            // the CXEndCallAction handler below names this call in both of its
+            // branches (including the one for a call the manager has already
+            // forgotten), so sending one here too meant two events per end and
+            // Dart's single-shot echo swallow only ever caught the first.
             self.isFromPushKit = false
-            self.sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, data.toJSON())
         }
         let call = Call(uuid: uuid, data: data)
         self.callManager.endCall(call: call)
@@ -485,7 +487,12 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 return
             }
             let call = self.callManager.callWithUUID(uuid: uuid)
-            if (call != nil && self.answerCall == nil && self.outgoingCall == nil) {
+            // Per-call, not global: this timer belongs to THIS ring, so the
+            // only thing that may cancel it is THIS ring having been answered
+            // or dialled. Testing "is any call live" instead let one call's
+            // timer end a different, live call.
+            let isLive = self.answerCall?.uuid == uuid || self.outgoingCall?.uuid == uuid
+            if (call != nil && !isLive) {
                 self.callEndTimeout(data)
             }
         }
@@ -722,7 +729,15 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 action.fulfill()
             }
         }else {
-            self.answerCall = nil
+            // Only the call that actually ended loses its identity. Clearing
+            // `answerCall` for whatever ended meant that sweeping a stale call
+            // while another was answered disarmed the answered call's own
+            // guard in endCallNotExist, which then reported the LIVE call
+            // unanswered 45s in and took the audio session down with it.
+            // `outgoingCall` was never cleared at all, which left that guard
+            // permanently disarmed once this process had dialled once.
+            if self.answerCall?.uuid == call.uuid { self.answerCall = nil }
+            if self.outgoingCall?.uuid == call.uuid { self.outgoingCall = nil }
             sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, call.data.toJSON())
             if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                 appDelegate.onEnd(call, action)
