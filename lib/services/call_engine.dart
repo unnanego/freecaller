@@ -653,15 +653,24 @@ class CallEngine extends ChangeNotifier {
         // illegal server-side. Logging and moving on left the doc `accepted`
         // with nobody in the room — nothing sweeps that, so the peer sat alone
         // until they hung up. Re-read and close it with the legal transition.
+        //
+        // Only for `cancelled`, i.e. only when this side was the CALLER. The
+        // peer is the only one who can accept our outgoing call, so an
+        // `accepted` doc there really is ours to close. When this side was the
+        // callee (`declined`), an `accepted` doc means another of this user's
+        // devices took the ring — the server wakes every one of them — and
+        // writing `ended` here would hang up the call they just answered.
         log('teardown state write failed', error: e);
-        try {
-          final doc = await _calls.getCall(session.callId);
-          if (doc?.state == CallState.accepted && writeState != CallState.ended) {
-            await _calls.setState(session.callId, CallState.ended,
-                endedBy: _myUid);
+        if (writeState == CallState.cancelled) {
+          try {
+            final doc = await _calls.getCall(session.callId);
+            if (doc?.state == CallState.accepted) {
+              await _calls.setState(session.callId, CallState.ended,
+                  endedBy: _myUid);
+            }
+          } catch (e2) {
+            log('teardown state recovery failed', error: e2);
           }
-        } catch (e2) {
-          log('teardown state recovery failed', error: e2);
         }
       }
     }
@@ -682,9 +691,14 @@ class CallEngine extends ChangeNotifier {
       // cancel push never arrived — registered for good, because the sweep
       // otherwise runs only at the START of the next call. Until then the
       // system still believes the phone is in a call: on iOS that makes CallKit
-      // refuse the next incoming report outright. Nothing to keep here, the
-      // call is over.
-      await _clearStaleNativeCalls('');
+      // refuse the next incoming report outright.
+      //
+      // Keep THIS call's id even though it was just ended: end() only REQUESTS
+      // the end (a CXEndCallAction on iOS, a broadcast on Android), and the
+      // native active-call list still names it until that lands. Sweeping it
+      // too sent a second end whose echo nothing swallowed, and logged a
+      // `staleNativeCall` diagnostic on every ordinary hangup.
+      await _clearStaleNativeCalls(session.callId);
     }
     // Cue that a connected call has dropped (not for unanswered/declined rings).
     // Fire-and-forget: it self-delays for the session to settle, so awaiting it
