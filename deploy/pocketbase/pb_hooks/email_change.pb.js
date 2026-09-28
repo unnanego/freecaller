@@ -189,15 +189,48 @@ routerAdd(
 
     // Five guesses at eight digits, then the code is burned and a fresh one has
     // to be mailed — an online guessing budget, not a rate limit.
-    const attempts = Number(pending.get("attempts") || 0)
-    if (attempts >= 5) {
-      $app.delete(pending)
+    //
+    // The guess is CHARGED BEFORE IT IS LOOKED AT, in one statement. The old
+    // shape — read `attempts`, compare the code, write attempts + 1 on a miss —
+    // let any number of requests sent at the same moment all read "0 so far",
+    // all get their guess checked, and all write back "1": a budget of five
+    // became a budget of however many connections you could open. `attempts =
+    // attempts + 1` is evaluated by SQLite under its write lock, so concurrent
+    // guesses are counted one by one no matter how they interleave here, and
+    // the count is re-read afterwards to see which guess this one was.
+    //
+    // If the raw query is unavailable for some reason, fall back to the old
+    // read-modify-write rather than failing the confirm: a weaker counter beats
+    // an address change nobody can complete.
+    let attempts = 0
+    try {
+      $app
+        .db()
+        .newQuery(
+          "UPDATE email_changes SET attempts = COALESCE(attempts, 0) + 1 WHERE id = {:id}",
+        )
+        .bind({ id: pending.id })
+        .execute()
+      attempts = Number(
+        $app.findRecordById("email_changes", pending.id).get("attempts") || 0,
+      )
+    } catch (err) {
+      console.log("email-change: atomic attempt counter unavailable: " + err)
+      attempts = Number(pending.get("attempts") || 0) + 1
+      pending.set("attempts", attempts)
+      $app.save(pending)
+    }
+
+    if (attempts > 5) {
+      try {
+        $app.delete(pending)
+      } catch (err) {
+        // a parallel request already burned it
+      }
       return e.json(400, { message: "Слишком много попыток, запросите новый код" })
     }
 
     if ($security.sha256(auth.id + ":" + code) !== String(pending.get("codeHash"))) {
-      pending.set("attempts", attempts + 1)
-      $app.save(pending)
       return e.json(400, { message: "Неверный код" })
     }
 
@@ -243,6 +276,55 @@ routerAdd(
     $app.delete(pending)
 
     console.log("email-change: " + auth.id + " moved from " + previous + " to " + email)
+
+    // Tell the address that just stopped being the credential.
+    //
+    // The proof above is possession of the NEW mailbox plus a signed-in phone.
+    // Someone holding an unlocked phone for two minutes has both, and the owner
+    // would otherwise learn about it the next time they need a sign-in code —
+    // which now goes to a stranger. The old mailbox is the one place the real
+    // owner still certainly reads, so that is where the notice goes. It names
+    // the new address on purpose: "changed to something" is alarming, "changed
+    // to this" is actionable.
+    //
+    // Best effort and after the fact: the change has happened, and a bounce
+    // from a mailbox that was being abandoned anyway must not turn a success
+    // into an error on the phone.
+    if (previous && previous.toLowerCase() !== email.toLowerCase()) {
+      try {
+        const esc = (raw) =>
+          String(raw === null || raw === undefined ? "" : raw)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;")
+
+        const settings = $app.settings()
+        $app.newMailClient().send(
+          new MailerMessage({
+            from: {
+              address: settings.meta.senderAddress,
+              name: settings.meta.senderName,
+            },
+            to: [{ address: previous }],
+            subject: "Адрес для входа в «Звонилку» изменён",
+            html:
+              "<p>Здравствуйте!</p>" +
+              "<p>Вход в ваш аккаунт «Звонилки» только что перенесён с этого " +
+              "адреса на другой:</p>" +
+              '<p style="font-size:20px"><strong>' + esc(email) + "</strong></p>" +
+              "<p>Коды для входа теперь будут приходить туда, а не сюда.</p>" +
+              "<p>Если это сделали вы — просто удалите это письмо.</p>" +
+              "<p><strong>Если это были не вы — сразу скажите тому, кто " +
+              "настраивал вам «Звонилку»: он вернёт адрес и отключит чужое " +
+              "устройство.</strong></p>",
+          }),
+        )
+      } catch (err) {
+        console.log("email-change: could not notify " + previous + ": " + err)
+      }
+    }
     return $apis.recordAuthResponse(e, user, "email-change")
   },
   $apis.requireAuth(),

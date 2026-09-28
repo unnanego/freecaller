@@ -22,7 +22,14 @@
 //
 // CONFIG: /etc/freecaller/review-otp.json, a flat {email: code} map, e.g.
 //
-//     { "review1@holographica.space": "24681357" }
+//     { "review1@holographica.space": "<8 random digits>" }
+//
+// A value that is not exactly 8 digits is IGNORED (and logged): the template's
+// REPLACE_… placeholders, the `_comment` array, a code with a typo'd letter.
+// Pinning such a value would be worse than not pinning — the account's emailed
+// code stops working the moment anything is pinned, and the activation screen's
+// field is numeric and 8 long, so nobody could type the garbage that replaced
+// it: a listed account that simply cannot sign in.
 //
 // Install root:pocketbase, chmod 640, like push.json. **Delete the file when
 // review is over** — that disables the whole mechanism, no redeploy needed.
@@ -48,11 +55,17 @@ onRecordCreate((e) => {
       if (codes) {
         const user = $app.findRecordById("users", e.record.get("recordRef"))
         const email = String(user.get("email") || "").toLowerCase()
-        const fixed = String(codes[email] || "").trim()
+        const raw = codes[email]
+        const fixed = typeof raw === "string" ? raw.trim() : ""
 
-        if (fixed) {
+        if (/^[0-9]{8}$/.test(fixed)) {
           e.record.setPassword(fixed)
           console.log("review otp: pinned fixed code for " + email)
+        } else if (raw !== undefined && raw !== null && raw !== "") {
+          console.log(
+            "review otp: entry for " + email + " is not 8 digits — ignored, " +
+              "the emailed code stays valid",
+          )
         }
       }
     }

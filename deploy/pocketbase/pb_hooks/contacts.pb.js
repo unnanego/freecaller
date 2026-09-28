@@ -10,6 +10,8 @@
 //   POST /api/freecaller/invite  {"name": …, "phone": "+7…", "email": …}
 //     -> {"uid": …, "email": …, "emailed": true|false}   409 if either the
 //        phone or the address already belongs to an account
+//                                                        429 past the daily
+//        quota (10 accounts created / 30 attempts per inviter per 24h)
 //
 // Both need to read or write records the caller has no rule-level access to
 // (the whole roster; another user's contacts), which is exactly what a hook is
@@ -112,6 +114,57 @@ routerAdd(
       return "+" + digits
     }
 
+    // Everything that reaches the email below is somebody's free text: the
+    // inviter's displayName is owner-editable, and the address is whatever was
+    // typed into the sheet. Unescaped, a displayName of `<a href="https://…">`
+    // is a phishing link delivered from the family's own trusted sender, to a
+    // person who has been told to expect exactly this email.
+    const esc = (raw) =>
+      String(raw === null || raw === undefined ? "" : raw)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+
+    // The quota. See pb_migrations/1789900200_create_invites.js for why the
+    // trail exists and what it (deliberately) does not hold.
+    const MAX_CREATED_PER_DAY = 10
+    const MAX_ATTEMPTS_PER_DAY = 30
+
+    // Both helpers fail OPEN. The quota is a guard rail, and the collection
+    // behind it arrives by migration: if that migration has not run (or the
+    // table is unreadable) the right outcome is that invitations keep working
+    // and the log says why they are uncounted — not that nobody can be invited.
+    const countInvites = (uid, outcome) => {
+      try {
+        const since = new Date(Date.now() - 86400 * 1000)
+          .toISOString()
+          .replace("T", " ")
+        const filter =
+          "inviter = {:uid} && created > {:since}" +
+          (outcome ? " && outcome = {:outcome}" : "")
+        return $app.findRecordsByFilter("invites", filter, "", 100, 0, {
+          uid: uid,
+          since: since,
+          outcome: outcome || "",
+        }).length
+      } catch (err) {
+        console.log("invite: quota unavailable (not enforced): " + err)
+        return 0
+      }
+    }
+    const noteInvite = (uid, outcome) => {
+      try {
+        const row = new Record($app.findCollectionByNameOrId("invites"))
+        row.set("inviter", uid)
+        row.set("outcome", outcome)
+        $app.save(row)
+      } catch (err) {
+        console.log("invite: could not record attempt: " + err)
+      }
+    }
+
     const link = (record, otherId) => {
       const contacts = record.get("contacts") || []
       if (contacts.indexOf(otherId) === -1) {
@@ -138,9 +191,29 @@ routerAdd(
       return e.json(400, { message: "Malformed request body" })
     }
 
-    if (!name || !phone || email.indexOf("@") < 1) {
+    // The address has to look like one, and must not carry anything that
+    // could mean something to an HTML renderer or a mail header. PocketBase
+    // validates it again on save; this just turns a 500 into a 400 and keeps
+    // obvious junk away from the mailer.
+    const emailOk =
+      email.length <= 255 && /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/.test(email)
+
+    if (!name || name.length > 100 || !phone || !emailOk) {
       return e.json(400, {
         message: "A name, a valid phone and an email are required",
+      })
+    }
+
+    // Quota, checked before anything is looked up: the 409 below answers "does
+    // an account hold this number / address", and an unmetered oracle is its
+    // own problem even when it creates nothing.
+    if (
+      countInvites(auth.id, "created") >= MAX_CREATED_PER_DAY ||
+      countInvites(auth.id, "") >= MAX_ATTEMPTS_PER_DAY
+    ) {
+      console.log("invite: " + auth.id + " is over the daily quota")
+      return e.json(429, {
+        message: "Слишком много приглашений за сегодня, попробуйте завтра",
       })
     }
 
@@ -177,6 +250,7 @@ routerAdd(
         "invite: refused, " + (invitee.id === auth.id ? "self" : invitee.get("email")) +
           " already holds phone " + phone + " / typed address " + email,
       )
+      noteInvite(auth.id, "refused")
       return e.json(409, { message: "Такой аккаунт уже есть" })
     }
 
@@ -194,6 +268,7 @@ routerAdd(
     invitee.setPassword($security.randomString(40))
     $app.save(invitee)
     console.log("invite: provisioned " + email + " (" + invitee.id + ")")
+    noteInvite(auth.id, "created")
 
     // Link both directions. Hook writes go through $app, which bypasses the API
     // rules — so this does what the old Cloud Function's arrayUnion did without
@@ -227,11 +302,11 @@ routerAdd(
           html:
             "<p>Здравствуйте!</p>" +
             "<p>" +
-            (inviterName ? inviterName + " приглашает вас" : "Вас пригласили") +
+            (inviterName ? esc(inviterName) + " приглашает вас" : "Вас пригласили") +
             " в «Звонилку» — приложение для звонков близким.</p>" +
             "<p>Установите приложение и на первом экране введите этот адрес " +
             "почты:</p>" +
-            '<p style="font-size:20px"><strong>' + email + "</strong></p>" +
+            '<p style="font-size:20px"><strong>' + esc(email) + "</strong></p>" +
             "<p>Мы сразу пришлём сюда код для входа — пароль не нужен.</p>",
         }),
       )
@@ -247,3 +322,30 @@ routerAdd(
   },
   $apis.requireAuth(),
 )
+
+// Housekeeping for the invite trail: the quota only ever looks back one day, so
+// a month is already generous (and enough to answer "who invited all these
+// people?" after the fact). Self-contained, like every cron callback.
+cronAdd("purgeInvites", "29 4 * * *", () => {
+  const cutoff = new Date(Date.now() - 30 * 86400 * 1000)
+    .toISOString()
+    .replace("T", " ")
+  let old = []
+  try {
+    old = $app.findRecordsByFilter("invites", "created < {:cutoff}", "", 1000, 0, {
+      cutoff: cutoff,
+    })
+  } catch (err) {
+    return
+  }
+  for (let i = 0; i < old.length; i++) {
+    try {
+      $app.delete(old[i])
+    } catch (err) {
+      // best effort
+    }
+  }
+  if (old.length) {
+    console.log("invite: purged " + old.length + " old trail record(s)")
+  }
+})

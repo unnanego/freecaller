@@ -9,9 +9,15 @@
 //
 // Nothing else guards the size: the client writes one line per audio-route
 // CHANGE, not per attempt, so a call produces one or two records.
-const DIAGNOSTICS_TTL_DAYS = 14
-
+//
+// The TTL is declared INSIDE the callback on purpose: cron callbacks, like hook
+// callbacks, run in their own goja runtime where this file's top-level consts
+// do not exist. As a file-level const it would be an undefined-variable throw
+// every night at 04:00 — a purge that never purges, and says so only in a log
+// nobody reads at that hour.
 cronAdd("purgeDiagnostics", "0 4 * * *", () => {
+  const DIAGNOSTICS_TTL_DAYS = 14
+
   const cutoff = new Date(Date.now() - DIAGNOSTICS_TTL_DAYS * 86400 * 1000)
     .toISOString()
     .replace("T", " ")

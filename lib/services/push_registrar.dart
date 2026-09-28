@@ -21,6 +21,10 @@ class PushRegistrar {
   StreamSubscription<String>? _fcmRotation;
   StreamSubscription<CallUiEvent>? _voipRotation;
 
+  /// Bumped by [unregister]. An upload started under an older value belongs to
+  /// an account this device has since left and must not land.
+  int _epoch = 0;
+
   Future<void> register() async {
     final uid = _auth.uid;
     if (uid == null) return;
@@ -58,21 +62,38 @@ class PushRegistrar {
     _fcmRotation = null;
     await _voipRotation?.cancel();
     _voipRotation = null;
+    // Stops the FCM retry loop below: it sleeps between attempts, and one that
+    // woke up after the delete put the row straight back.
+    _epoch++;
     final uid = _auth.uid;
     if (uid == null) return;
-    try {
-      await _devices.delete(uid: uid, deviceId: await _auth.deviceId());
-    } catch (e) {
-      log('push token unregister failed', error: e);
+    // A few tries, not one. After this returns the session is gone and with it
+    // the right to delete the row, so a single failed request on a flaky link
+    // left the phone ringing for the account it had signed out of — until
+    // somebody else signed in on it. It still cannot block sign-out for long.
+    final deviceId = await _auth.deviceId();
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        await _devices
+            .delete(uid: uid, deviceId: deviceId)
+            .timeout(const Duration(seconds: 5));
+        return;
+      } catch (e) {
+        log('push token unregister attempt ${attempt + 1} failed', error: e);
+      }
+      await Future<void>.delayed(Duration(milliseconds: 500 * (attempt + 1)));
     }
   }
 
   /// Fetch the FCM token with retries and register it — a fresh install often
   /// isn't ready to hand one out on the very first call.
   Future<void> _uploadFcmWithRetry(String uid, String deviceId) async {
+    final epoch = _epoch;
     for (var attempt = 0; attempt < 5; attempt++) {
+      if (epoch != _epoch) return; // signed out while we were waiting
       try {
         final token = await FirebaseMessaging.instance.getToken();
+        if (epoch != _epoch) return;
         if (token != null) {
           await _upload(uid, deviceId, fcmToken: token);
           return;

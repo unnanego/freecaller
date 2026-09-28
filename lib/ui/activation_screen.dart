@@ -195,45 +195,54 @@ class _ActivationScreenState extends State<ActivationScreen> {
       contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 18),
     );
 
+    // The prompt is a heading well above the field, which a screen reader does
+    // not connect to it — focused, the field was just "text field". The heading
+    // stays readable on its own; this names the field when focus lands on it.
     if (!_awaitingCode) {
       return Container(
         decoration: decoration,
-        child: TextField(
-          key: const ValueKey('email'),
-          controller: _input,
-          keyboardType: TextInputType.emailAddress,
-          autocorrect: false,
-          enableSuggestions: false,
-          textCapitalization: TextCapitalization.none,
-          // Larger than the handoff's 16px because an older helper is usually
-          // the one typing, but not so large that an ordinary address scrolls
-          // out of the field — being able to proofread it is the whole point,
-          // since a code sent to a mistyped address never arrives.
-          style: Mod.name().copyWith(fontSize: 19, fontWeight: FontWeight.w400),
-          decoration: inputDecoration,
+        child: Semantics(
+          label: loc.activationEmailPrompt,
+          child: TextField(
+            key: const ValueKey('email'),
+            controller: _input,
+            keyboardType: TextInputType.emailAddress,
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
+            // Larger than the handoff's 16px because an older helper is usually
+            // the one typing, but not so large that an ordinary address scrolls
+            // out of the field — being able to proofread it is the whole point,
+            // since a code sent to a mistyped address never arrives.
+            style: Mod.name().copyWith(fontSize: 19, fontWeight: FontWeight.w400),
+            decoration: inputDecoration,
+          ),
         ),
       );
     }
     return Container(
       decoration: decoration,
-      child: TextField(
-        key: const ValueKey('code'),
-        controller: _input,
-        // Straight to the digits-only keypad: the code is 8 digits and the
-        // person typing it is usually reading it aloud off another screen.
-        keyboardType:
-            const TextInputType.numberWithOptions(signed: false, decimal: false),
-        autofocus: true,
-        inputFormatters: [
-          FilteringTextInputFormatter.digitsOnly,
-          LengthLimitingTextInputFormatter(8),
-        ],
-        // 34/4 is deliberate and stays: the handoff spaces its 6-digit code at
-        // 0.42em, but ours is 8 digits and overflowed a normal-width phone when
-        // this was tried larger.
-        style: Mod.tileInitials(34).copyWith(letterSpacing: 4),
-        textAlign: TextAlign.center,
-        decoration: inputDecoration,
+      child: Semantics(
+        label: loc.activationCodePrompt,
+        child: TextField(
+          key: const ValueKey('code'),
+          controller: _input,
+          // Straight to the digits-only keypad: the code is 8 digits and the
+          // person typing it is usually reading it aloud off another screen.
+          keyboardType:
+              const TextInputType.numberWithOptions(signed: false, decimal: false),
+          autofocus: true,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(8),
+          ],
+          // 34/4 is deliberate and stays: the handoff spaces its 6-digit code at
+          // 0.42em, but ours is 8 digits and overflowed a normal-width phone when
+          // this was tried larger.
+          style: Mod.tileInitials(34).copyWith(letterSpacing: 4),
+          textAlign: TextAlign.center,
+          decoration: inputDecoration,
+        ),
       ),
     );
   }

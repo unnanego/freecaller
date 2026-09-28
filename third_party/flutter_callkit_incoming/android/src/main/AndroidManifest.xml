@@ -19,12 +19,32 @@
 
     <uses-permission android:name="${applicationId}.PERMISSION_CALL" />
 
+    <!-- signature, not normal. A "normal" permission is granted to any app that
+         merely declares it, so it guarded nothing: any installed app could
+         broadcast ACTION_CALL_INCOMING at the receiver below and raise a
+         full-screen ring under a caller name of its choosing — and the person
+         this app is for cannot see the screen and trusts the name that is
+         announced. "signature" restricts it to packages signed with this app's
+         own key, which in practice is this app alone.
+         Nothing of ours depends on it being weaker: every sender is this same
+         package (the FCM service, the plugin's own sendBroadcast/startService
+         calls, and the PendingIntents behind notification buttons and the
+         full-screen intent, which the system fires under OUR identity), and a
+         same-UID caller passes a component's permission check outright. -->
     <permission
         android:name="${applicationId}.PERMISSION_CALL"
-        android:protectionLevel="normal" />
+        android:protectionLevel="signature" />
 
     <application>
 
+        <!-- None of the three components below is exported any more (belt and
+             braces with the signature permission). Each is only ever reached by
+             an explicit intent from this package, or by a PendingIntent this
+             package created, and a PendingIntent is delivered with its
+             creator's identity, so it reaches a non-exported component — the
+             same way TransparentActivity, never exported, always has. Telecom
+             talks only to CallkitConnectionService, which stays exported and is
+             guarded by BIND_TELECOM_CONNECTION_SERVICE. -->
         <activity
             android:name="com.hiennv.flutter_callkit_incoming.CallkitIncomingActivity"
             android:taskAffinity=""
@@ -32,7 +52,7 @@
             android:noHistory="true"
             android:turnScreenOn="true"
             android:configChanges="orientation"
-            android:exported="true"
+            android:exported="false"
             android:launchMode="singleInstance"
             android:allowTaskReparenting="false"
             android:theme="@style/CallkitIncomingTheme"
@@ -52,7 +72,7 @@
         <receiver
             android:name="com.hiennv.flutter_callkit_incoming.CallkitIncomingBroadcastReceiver"
             android:enabled="true"
-            android:exported="true"
+            android:exported="false"
             android:permission="${applicationId}.PERMISSION_CALL">
             <intent-filter>
                 <action android:name="${applicationId}.com.hiennv.flutter_callkit_incoming.ACTION_CALL_INCOMING" />
@@ -65,7 +85,7 @@
 
         <service
             android:enabled="true"
-            android:exported="true"
+            android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="phoneCall|microphone|camera"
             android:permission="${applicationId}.PERMISSION_CALL"

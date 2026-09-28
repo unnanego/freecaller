@@ -16,10 +16,16 @@
     "reads it per request and does nothing when it is missing.",
     "",
     "Codes belong in the App Review notes next to the email, never in git —",
-    "the real file is gitignored."
+    "the real file is gitignored. Make each one up with a random generator:",
+    "anything memorable (a date, 12345678, digits of pi) is the first thing a",
+    "stranger who knows the review address would try.",
+    "",
+    "The placeholders below are ignored as they stand: the hook only pins a",
+    "value that is exactly 8 digits, so installing this template unedited",
+    "pins nothing rather than pinning the word REPLACE."
   ],
 
-  "review1@holographica.space": "24681357",
-  "review2@holographica.space": "31415926",
-  "review3@holographica.space": "27182818"
+  "review1@holographica.space": "REPLACE_WITH_8_DIGIT_CODE",
+  "review2@holographica.space": "REPLACE_WITH_8_DIGIT_CODE",
+  "review3@holographica.space": "REPLACE_WITH_8_DIGIT_CODE"
 }

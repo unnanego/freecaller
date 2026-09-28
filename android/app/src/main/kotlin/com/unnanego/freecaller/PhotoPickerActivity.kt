@@ -33,12 +33,23 @@ import java.io.FileOutputStream
 class PhotoPickerActivity : Activity() {
     private var captureFile: File? = null
 
+    // Whether the Dart call that opened this activity has been answered. Every
+    // way out of here must answer it exactly once: an unanswered one is a Dart
+    // future that never completes and a profile screen stuck on its spinner.
+    private var answered = false
+
+    // Which Dart request this activity is answering (see PhotoPickerBridge).
+    // Read from the launching intent, which a recreated instance gets again.
+    private val ticket: Int by lazy { intent.getIntExtra(EXTRA_TICKET, -1) }
+
     companion object {
         const val EXTRA_CAMERA = "camera"
+        const val EXTRA_TICKET = "ticket"
 
         private const val TAG = "FreecallerPhoto"
         private const val REQ_PICK = 4001
         private const val REQ_CAPTURE = 4002
+        private const val STATE_CAPTURE_FILE = "captureFile"
 
         // The server caps an avatar at 2 MB and never serves the original — it
         // is shown at 46-140 px. Matching what image_picker was asked for on
@@ -49,19 +60,50 @@ class PhotoPickerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Recreated (rotation, process death) with a pick already in flight:
-        // the pending Dart call is long gone, so do not start a second picker.
+        // Recreated (rotation, or "don't keep activities" / low memory while the
+        // camera was in front) with a pick already in flight. Do not start a
+        // second picker — but do NOT finish either: the first picker is still
+        // up and its result is delivered to this new instance through
+        // onActivityResult. Finishing here threw that result away without
+        // answering PhotoPickerBridge, so Dart's `pick` never completed. All
+        // the new instance needs in order to carry on is where the camera was
+        // told to write.
+        //
+        // After real process death the parked Dart result died with the
+        // process; the bridge then has nothing pending and answering it is a
+        // no-op, which is the right outcome.
         if (savedInstanceState != null) {
-            finish()
+            captureFile = savedInstanceState.getString(STATE_CAPTURE_FILE)?.let { File(it) }
             return
         }
         try {
             if (intent.getBooleanExtra(EXTRA_CAMERA, false)) startCapture() else startPick()
         } catch (e: Throwable) {
             Log.w(TAG, "could not open picker", e)
-            PhotoPickerBridge.fail("unavailable", e.message ?: "picker unavailable")
+            answered = true
+            PhotoPickerBridge.fail(ticket, "unavailable", e.message ?: "picker unavailable")
             finish()
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        captureFile?.let { outState.putString(STATE_CAPTURE_FILE, it.absolutePath) }
+    }
+
+    override fun onDestroy() {
+        // Finishing without having answered — dismissed by the system, a
+        // finish() from a path nobody thought of — is reported as "nothing
+        // chosen". Not when merely being recreated (isFinishing is false
+        // then): the pick is still in flight and its result is still coming.
+        // succeed() is a no-op once the bridge has been answered, so this can
+        // never produce a second reply.
+        if (isFinishing && !answered) {
+            answered = true
+            PhotoPickerBridge.succeed(ticket, null)
+            captureFile?.delete()
+        }
+        super.onDestroy()
     }
 
     private fun startPick() {
@@ -86,9 +128,11 @@ class PhotoPickerActivity : Activity() {
     @Deprecated("startActivityForResult is the only path that works from our own task")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        // Whatever happens below answers the bridge (every branch does).
+        answered = true
         if (resultCode != RESULT_OK) {
             // Backed out of the picker: not an error, just nothing chosen.
-            PhotoPickerBridge.succeed(null)
+            PhotoPickerBridge.succeed(ticket, null)
             captureFile?.delete()
             finish()
             return
@@ -98,20 +142,20 @@ class PhotoPickerActivity : Activity() {
             else -> data?.data
         }
         if (source == null) {
-            PhotoPickerBridge.fail("no-image", "picker returned no image")
+            PhotoPickerBridge.fail(ticket, "no-image", "picker returned no image")
             finish()
             return
         }
         try {
             val scaled = downscale(source)
             if (scaled == null) {
-                PhotoPickerBridge.fail("decode", "could not read the chosen image")
+                PhotoPickerBridge.fail(ticket, "decode", "could not read the chosen image")
             } else {
-                PhotoPickerBridge.succeed(scaled.absolutePath)
+                PhotoPickerBridge.succeed(ticket, scaled.absolutePath)
             }
         } catch (e: Throwable) {
             Log.w(TAG, "could not process image", e)
-            PhotoPickerBridge.fail("decode", e.message ?: "could not process image")
+            PhotoPickerBridge.fail(ticket, "decode", e.message ?: "could not process image")
         } finally {
             // The capture original is redundant once it has been scaled down,
             // and it is a photo of someone sitting in a cache directory.
@@ -193,20 +237,37 @@ class PhotoPickerActivity : Activity() {
  */
 object PhotoPickerBridge {
     private var pending: MethodChannel.Result? = null
+    // Starts somewhere arbitrary rather than at 0, so an activity restored
+    // after process death (still carrying a ticket from the old process)
+    // cannot coincide with the first ticket this process hands out.
+    private var ticket = (System.nanoTime() and 0x3fffffff).toInt()
 
-    /** Park [result] for the activity to answer. */
-    fun begin(result: MethodChannel.Result) {
+    /**
+     * Park [result] for the activity to answer, and return the ticket that
+     * activity must present when it does.
+     *
+     * The ticket is what makes "exactly once" hold with two activities alive:
+     * a second `pick` abandons the first request, but the first activity is
+     * still out there, and when it eventually finishes it answers. Without a
+     * ticket that late answer landed on the SECOND request — resolving a pick
+     * the user was still in the middle of with somebody else's "nothing".
+     */
+    fun begin(result: MethodChannel.Result): Int {
         pending?.success(null) // whatever was in flight is abandoned, not lost
         pending = result
+        ticket += 1
+        return ticket
     }
 
-    fun succeed(path: String?) {
+    fun succeed(forTicket: Int, path: String?) {
+        if (forTicket != ticket) return
         val result = pending ?: return
         pending = null
         result.success(path)
     }
 
-    fun fail(code: String, message: String) {
+    fun fail(forTicket: Int, code: String, message: String) {
+        if (forTicket != ticket) return
         val result = pending ?: return
         pending = null
         result.error(code, message, null)

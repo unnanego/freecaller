@@ -181,6 +181,14 @@ class CallManager: NSObject {
     static let callsChangedNotification = Notification.Name("CallsChangedNotification")
     var callsChangedHandler: (() -> Void)?
     
+    /// Whether the SYSTEM currently holds a call of ours with this uuid — true
+    /// for a ring that is on screen even when `calls` has lost track of it
+    /// (the observer only ever lists this app's own calls by uuid match, and a
+    /// foreign call cannot share one).
+    func isKnownToSystem(uuid: UUID) -> Bool {
+        return callController.callObserver.calls.contains { $0.uuid == uuid && !$0.hasEnded }
+    }
+    
     func callWithUUID(uuid: UUID) -> Call?{
         guard let idx = calls.firstIndex(where: { $0.uuid == uuid }) else { return nil }
         return calls[idx]

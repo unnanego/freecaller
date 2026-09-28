@@ -110,8 +110,12 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 return
             }
             if let getArgs = args as? [String: Any] {
-                self.data = Data(args: getArgs)
-                showCallkitIncoming(self.data!, fromPushKit: false)
+                // Not stored here: showCallkitIncoming adopts it as self.data
+                // only once CallKit has accepted the report. Storing it up
+                // front meant a ring iOS REJECTED (one is already live) still
+                // replaced the live call's data — its audio-session mode and
+                // the identity every id-less event is sent under.
+                showCallkitIncoming(Data(args: getArgs), fromPushKit: false)
             }
             result(true)
             break
@@ -187,13 +191,15 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 result(true)
                 return
             }
-            if(self.isFromPushKit){
-                self.connectedCall(self.data!)
-            }else{
-                    if let getArgs = args as? [String: Any] {
-                    self.data = Data(args: getArgs)
-                    self.connectedCall(self.data!)
-                    }
+            // Always connect the call the caller NAMED — the same fix endCall
+            // got. The old isFromPushKit branch threw the argument away and
+            // connected self.data (whatever PushKit reported last), and the
+            // other branch replaced self.data with an id-only stub, wiping the
+            // live call's audio-session settings.
+            if let getArgs = args as? [String: Any] {
+                self.connectedCall(Data(args: getArgs))
+            } else if let stored = self.data {
+                self.connectedCall(stored)
             }
             result(true)
             break
@@ -264,11 +270,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     @objc public func showCallkitIncoming(_ data: Data, fromPushKit: Bool, onError: ((Error?) -> Void)? = nil) {
-        self.isFromPushKit = fromPushKit
-        if(fromPushKit){
-            self.data = data
-        }
-        
+        // isFromPushKit / self.data are adopted in the SUCCESS completion
+        // below, never here: a report iOS rejects (a call is already live and
+        // maximumCallsPerCallGroup is 1, Do Not Disturb, a duplicate uuid)
+        // must leave the live call's stored data and flag exactly as they were.
         if(data.isShowMissedCallNotification){
             CallkitNotificationManager.shared.addNotificationCategory(data.missedNotificationCallbackText)
         }
@@ -302,6 +307,8 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         // the call is successfully reported, matching the fromPushKit variant.
         self.sharedProvider?.reportNewIncomingCall(with: uuid, update: callUpdate) { error in
             if(error == nil) {
+                self.isFromPushKit = fromPushKit
+                self.data = data
                 self.configureAudioSession()
                 let call = Call(uuid: uuid, data: data)
                 call.handle = data.handle
@@ -319,11 +326,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     @objc public func showCallkitIncoming(_ data: Data, fromPushKit: Bool, completion: @escaping () -> Void) {
-        self.isFromPushKit = fromPushKit
-        if(fromPushKit){
-            self.data = data
-        }
-        
+        // isFromPushKit / self.data are adopted in the SUCCESS completion
+        // below, never here: a report iOS rejects (a call is already live and
+        // maximumCallsPerCallGroup is 1, Do Not Disturb, a duplicate uuid)
+        // must leave the live call's stored data and flag exactly as they were.
         if(data.isShowMissedCallNotification){
             CallkitNotificationManager.shared.addNotificationCategory(data.missedNotificationCallbackText)
         }
@@ -353,6 +359,8 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         
         self.sharedProvider?.reportNewIncomingCall(with: uuid, update: callUpdate) { error in
             if(error == nil) {
+                self.isFromPushKit = fromPushKit
+                self.data = data
                 self.configureAudioSession()
                 let call = Call(uuid: uuid, data: data)
                 call.handle = data.handle
@@ -365,6 +373,177 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     
+    // MARK: - Host-app PushKit helpers (cancel pushes, garbage pushes)
+
+    /// The shared instance, created on the spot if Flutter has not registered
+    /// the plugin yet.
+    ///
+    /// A VoIP push can launch the app in the background before any Flutter
+    /// engine exists, and `sharedInstance` used to be born only inside
+    /// `register(with:)`. The host's PushKit handler reached it through
+    /// optional chaining, so on that launch nothing was reported to CallKit and
+    /// PushKit's completion was never called — iOS kills the app for that
+    /// (0xbaadca11) and, after a few, stops delivering VoIP pushes at all.
+    ///
+    /// Creating it early is safe because `init` does nothing but build a
+    /// CallManager (the messenger argument was never used), and
+    /// `sharePluginWithRegister` already copes with an instance that exists
+    /// before registration: it only attaches the channels. Events sent before
+    /// that have no listener and are dropped, which the Dart side already
+    /// expects — a cold-started engine learns about the ring, and whether it
+    /// was answered, from activeCalls().
+    @objc public static func ensureSharedInstance() -> SwiftFlutterCallkitIncomingPlugin {
+        if sharedInstance == nil {
+            sharedInstance = SwiftFlutterCallkitIncomingPlugin(detached: true)
+        }
+        return sharedInstance
+    }
+
+    /// An instance with no Flutter engine behind it yet (see above).
+    private init(detached: Bool) {
+        callManager = CallManager()
+        super.init()
+    }
+
+    /// Whether CallKit (or this plugin) currently holds a call with this uuid.
+    @objc public func isCallActive(uuidString: String) -> Bool {
+        guard let uuid = UUID(uuidString: uuidString) else { return false }
+        if let call = self.callManager.callWithUUID(uuid: uuid), !call.hasEnded {
+            return true
+        }
+        return self.callManager.isKnownToSystem(uuid: uuid)
+    }
+
+    /// The provider to report on, WITHOUT touching a live one's configuration.
+    ///
+    /// initCallkitProvider reassigns `configuration` on every report, and doing
+    /// that for a throwaway report while a call is live is what reset the live
+    /// call's limits (maximumCallGroups back to the default 2 — hence the
+    /// call-waiting flash). Only when there is no provider at all is one made,
+    /// with the strictest limits: one group, one call, so a throwaway report
+    /// made during a live call is refused by iOS instead of shown.
+    private func providerForThrowawayReport(appName: String) -> CXProvider {
+        if let provider = self.sharedProvider { return provider }
+        let configuration = CXProviderConfiguration(localizedName: appName)
+        configuration.supportsVideo = true
+        configuration.maximumCallGroups = 1
+        configuration.maximumCallsPerCallGroup = 1
+        configuration.supportedHandleTypes = [.generic, .emailAddress, .phoneNumber]
+        let provider = CXProvider(configuration: configuration)
+        provider.setDelegate(self, queue: nil)
+        self.sharedProvider = provider
+        self.callManager.setSharedProvider(provider)
+        return provider
+    }
+
+    /// For a VoIP push that must NOT ring: a cancel (the caller hung up before
+    /// we answered) or a push whose call id is garbage.
+    ///
+    /// Apple requires every VoIP push to report an incoming call before the
+    /// PushKit completion runs, so one is reported under `uuid` and ended from
+    /// inside the report's own completion handler — by which point CallKit
+    /// definitely knows (or has definitely refused) the uuid. The old cancel
+    /// path ended it with a CXEndCallAction fired right after the report was
+    /// *requested*; when that overtook the report, CallKit answered "unknown
+    /// uuid", the end was lost, and a nameless call rang out its full timeout.
+    ///
+    /// When `uuid` is a ring already on screen, the report fails with
+    /// callUUIDAlreadyExists — no second ring, nothing shown — and the
+    /// reportCall(endedAt:) that follows dismisses the real ring. So a cancel
+    /// for a showing ring and a cancel for a ring that never arrived are the
+    /// same code path, and the push is accounted for in both.
+    ///
+    /// Deliberately NOT done here, all of which the old path did via
+    /// showCallkitIncoming: replacing self.data / isFromPushKit (they belong to
+    /// the live call), reconfiguring the provider, configuring the audio
+    /// session (setMode(.default) under a live call), registering the call
+    /// with the CallManager, arming a ring timeout.
+    ///
+    /// Ending through reportCall(endedAt:reason:) rather than a CXEndCallAction
+    /// also matters to Dart: an end *action* is what a local hang-up looks
+    /// like, and came back as ACTION_CALL_DECLINE — the app then recorded a
+    /// decline by the user for a call the CALLER had cancelled.
+    ///
+    /// `completion` is always called, exactly once, on the provider's queue
+    /// (main).
+    @objc public func reportAndEndCall(
+        uuid: UUID,
+        callerName: String,
+        appName: String,
+        reason: CXCallEndedReason,
+        completion: @escaping () -> Void
+    ) {
+        let wasActive = self.isCallActive(uuidString: uuid.uuidString)
+        let provider = self.providerForThrowawayReport(appName: appName)
+
+        let update = CXCallUpdate()
+        update.remoteHandle = CXHandle(type: .generic, value: callerName)
+        update.localizedCallerName = callerName
+        update.hasVideo = false
+        update.supportsDTMF = false
+        update.supportsHolding = false
+        update.supportsGrouping = false
+        update.supportsUngrouping = false
+
+        provider.reportNewIncomingCall(with: uuid, update: update) { _ in
+            // Whatever the report's outcome: accepted (end the throwaway call
+            // before it is heard), already-exists (end the real ring), or
+            // refused (ending an unknown uuid is a no-op).
+            provider.reportCall(with: uuid, endedAt: Date(), reason: reason)
+            if wasActive {
+                self.forgetRemotelyEndedCall(uuid)
+            }
+            completion()
+        }
+    }
+
+    /// End a call the REMOTE side ended, if CallKit has it. Returns whether
+    /// there was one. No CXEndCallAction is involved, so no ACTION_CALL_DECLINE
+    /// — Dart gets ACTION_CALL_ENDED with `extra.remoteEnded == true`.
+    @discardableResult
+    @objc public func reportRemoteEnded(uuidString: String) -> Bool {
+        guard let uuid = UUID(uuidString: uuidString),
+              self.isCallActive(uuidString: uuidString),
+              let provider = self.sharedProvider else {
+            return false
+        }
+        provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
+        self.forgetRemotelyEndedCall(uuid)
+        return true
+    }
+
+    /// Book-keeping for a call ended by reportCall(endedAt:) — CallKit sends no
+    /// delegate callback for those, so what the CXEndCallAction handler does
+    /// for a local end has to be done by hand: drop it from the manager (which
+    /// also disarms its endCallNotExist ring timeout), release the
+    /// answered/outgoing slot if it held one, and tell Dart.
+    private func forgetRemotelyEndedCall(_ uuid: UUID) {
+        var body = self.eventBody(for: uuid)
+        if let call = self.callManager.callWithUUID(uuid: uuid) {
+            body = call.data.toJSON()
+            call.endCall()
+            self.callManager.removeCall(call)
+        }
+        if self.answerCall?.uuid == uuid { self.answerCall = nil }
+        if self.outgoingCall?.uuid == uuid { self.outgoingCall = nil }
+        if self.isFromPushKit, let stored = self.data,
+           stored.uuid.lowercased() == uuid.uuidString.lowercased() {
+            self.isFromPushKit = false
+        }
+        // ENDED, never DECLINE: nobody on this phone declined anything. The
+        // marker lets Dart tell a remote end from the user's own red button,
+        // which arrive under the same event name.
+        var extra: [String: Any] = [:]
+        if let existing = body["extra"] as? NSDictionary {
+            for (key, value) in existing {
+                if let key = key as? String { extra[key] = value }
+            }
+        }
+        extra["remoteEnded"] = true
+        body["extra"] = extra
+        sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, body)
+    }
+
     @objc public func startCall(_ data: Data, fromPushKit: Bool) {
         self.isFromPushKit = fromPushKit
         if(fromPushKit){
@@ -421,21 +600,18 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     @objc public func connectedCall(_ data: Data) {
+        // Connects exactly the call in `data`, like endCall. The old version
+        // redirected to self.data whenever isFromPushKit was set — and that
+        // flag used to be set even by a PushKit report iOS rejected — so
+        // connecting the live call could answer a different uuid instead.
         // Guard against malformed UUID — see CallManager.swift:startCall for rationale.
-        let uuidSourceString: String
-        if self.isFromPushKit {
-            guard let stored = self.data else {
-                NSLog("[CallkitIncoming] connectedCall: PushKit branch but self.data is nil — ignored")
-                return
-            }
-            uuidSourceString = stored.uuid
-            self.isFromPushKit = false
-        } else {
-            uuidSourceString = data.uuid
-        }
-        guard let uuid = UUID(uuidString: uuidSourceString) else {
-            NSLog("[CallkitIncoming] connectedCall: invalid UUID '\(uuidSourceString)' — ignored")
+        guard let uuid = UUID(uuidString: data.uuid) else {
+            NSLog("[CallkitIncoming] connectedCall: invalid UUID '\(data.uuid)' — ignored")
             return
+        }
+        if self.isFromPushKit, let stored = self.data,
+           stored.uuid.lowercased() == data.uuid.lowercased() {
+            self.isFromPushKit = false
         }
         let call = Call(uuid: uuid, data: data)
         self.callManager.connectedCall(call: call)

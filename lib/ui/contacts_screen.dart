@@ -29,6 +29,12 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
   /// OS, or has nothing to offer but a link to Settings.
   ContactAccess _access = ContactAccess.denied;
   List<DiscoveredContact> _onApp = const [];
+  /// Whether [_onApp] is the result of a load that actually finished, as opposed
+  /// to the empty list the screen starts with. A failed reload keeps a loaded
+  /// list on screen; a failed *first* load has nothing to keep, and must say so
+  /// ([_loadFailed]) rather than show an empty list that reads as an answer.
+  bool _loaded = false;
+  bool _loadFailed = false;
   Timer? _reloadDebounce;
 
   @override
@@ -107,10 +113,24 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
     if (!quiet) setState(() => _loading = true);
     // Nothing is uploaded until the user has explicitly consented — show the
     // consent screen first (Guideline 5.1.2).
-    if (!await widget.discovery.hasUploadConsent()) {
+    final bool consented;
+    try {
+      consented = await widget.discovery.hasUploadConsent();
+    } catch (_) {
+      // The preferences store failed. Same handling as a failed load below.
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadFailed = !_loaded;
+        });
+      }
+      return;
+    }
+    if (!consented) {
       if (!mounted) return;
       setState(() {
         _loading = false;
+        _loadFailed = false;
         _needsConsent = true;
         _denied = false;
         _onApp = const [];
@@ -118,23 +138,38 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
       return;
     }
     final List<DiscoveredContact>? result;
+    final ContactAccess access;
     try {
       result = await widget.discovery.loadAllowedOnApp();
-    } on ContactMatchException {
-      // Couldn't reach the backend. Keep whatever is already on screen: a
-      // rescan that failed must never present itself as "nobody uses the app",
-      // and this now runs on every resume, so a single dropped request would
-      // otherwise empty the list under the user.
-      if (mounted) setState(() => _loading = false);
+      // A null result means access is missing; which CTA to show depends on
+      // whether the OS is still willing to ask.
+      access = result == null
+          ? await widget.discovery.accessStatus()
+          : ContactAccess.granted;
+    } catch (_) {
+      // Couldn't look — the backend was unreachable (ContactMatchException), or
+      // the contacts plugin or the preferences store threw. Caught broadly
+      // because the alternative is worse than any one of them: an exception
+      // escaping here left [_loading] set, and the spinner never went away.
+      //
+      // Keep whatever is already on screen: a rescan that failed must never
+      // present itself as "nobody uses the app", and this now runs on every
+      // resume, so a single dropped request would otherwise empty the list
+      // under the user. With nothing loaded yet there is no list to keep, and
+      // the empty one would tell the same lie — so say it failed instead.
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadFailed = !_loaded;
+        });
+      }
       return;
     }
-    // A null result means access is missing; which CTA to show depends on
-    // whether the OS is still willing to ask.
-    final access =
-        result == null ? await widget.discovery.accessStatus() : ContactAccess.granted;
     if (!mounted) return;
     setState(() {
       _loading = false;
+      _loaded = true;
+      _loadFailed = false;
       _needsConsent = false;
       _denied = result == null;
       _access = access;
@@ -202,13 +237,16 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
       backgroundColor: Colors.transparent,
       builder: (_) => _InviteSheet(discovery: widget.discovery),
     );
-    _load(); // the invited person may now appear as a contact
+    // The invited person may now appear as a contact. The sheet can outlive
+    // this screen (sign-out underneath it), and _load starts with a setState.
+    if (mounted) _load();
   }
 
   Widget _body(AppLocalizations loc) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator(color: Mod.accent));
     }
+    if (_loadFailed) return _loadFailedCta(loc);
     if (_needsConsent) return _consentCta(loc);
     if (_denied) return _permissionCta(loc);
     return Column(
@@ -239,6 +277,39 @@ class _ContactsScreenState extends State<ContactsScreen> with WidgetsBindingObse
                 ),
         ),
       ],
+    );
+  }
+
+  /// The first load failed, so there is no list — not even an empty one — to
+  /// show. Says so and offers another go, instead of [AppLocalizations.contactsEmpty],
+  /// which is a statement about the user's contacts that nobody has checked.
+  Widget _loadFailedCta(AppLocalizations loc) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(Mod.s6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ExcludeSemantics(
+              child: Icon(Icons.cloud_off_outlined, color: Mod.neutral500, size: 48),
+            ),
+            const SizedBox(height: Mod.s4),
+            // liveRegion: the spinner it replaces says nothing when it goes, so
+            // without this a screen-reader user is never told the load ended.
+            Semantics(
+              liveRegion: true,
+              child: Text(loc.contactsLoadFailed,
+                  textAlign: TextAlign.center, style: Mod.body()),
+            ),
+            const SizedBox(height: Mod.s6),
+            _PrimaryButton(
+              label: loc.retry,
+              icon: Icons.refresh,
+              onTap: _load,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -561,22 +632,30 @@ class _InviteSheetState extends State<_InviteSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Mod.meta(color: Mod.neutral700)),
+        // The visible label is a sibling, which means nothing to a screen
+        // reader: the field was announced as a bare "text field". Name the
+        // field itself, and drop the sibling so the name is not read twice.
+        ExcludeSemantics(
+          child: Text(label, style: Mod.meta(color: Mod.neutral700)),
+        ),
         const SizedBox(height: 5),
         Container(
           decoration: BoxDecoration(
             color: Mod.bg,
             border: Border.all(color: Mod.divider, width: 2),
           ),
-          child: TextField(
-            controller: controller,
-            keyboardType: type,
-            inputFormatters: formatters,
-            style: Mod.body(color: Mod.text),
-            decoration: const InputDecoration(
-              isDense: true,
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          child: Semantics(
+            label: label,
+            child: TextField(
+              controller: controller,
+              keyboardType: type,
+              inputFormatters: formatters,
+              style: Mod.body(color: Mod.text),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              ),
             ),
           ),
         ),
@@ -599,7 +678,11 @@ class _ContactRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: Mod.s6, vertical: Mod.s3),
       child: Row(
         children: [
-          InitialsTile(name: contact.name, imageUrl: contact.avatarUrl),
+          // Decoration: the name is right beside it, and a tile of initials is
+          // read out as two stray letters before every contact.
+          ExcludeSemantics(
+            child: InitialsTile(name: contact.name, imageUrl: contact.avatarUrl),
+          ),
           const SizedBox(width: Mod.s3),
           Expanded(
             child: Text(contact.name,

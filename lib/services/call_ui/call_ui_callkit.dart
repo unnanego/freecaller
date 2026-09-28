@@ -86,7 +86,14 @@ class CallKitCallUi implements CallUi {
         // it again, round and round.
         _pluginCalls.remove(callKitParams.id);
         if (_swallowEcho(callKitParams.id)) return;
-        _emit(CallUiEvent(CallUiEventType.ended, callId: callKitParams.id));
+        // iOS: AppDelegate ends a cancelled ring with
+        // reportCall(endedAt:reason:.remoteEnded) and the plugin marks the
+        // event, so it can be told apart from the user pressing the red button.
+        final remote = callKitParams.extra?['remoteEnded'] == true;
+        _emit(CallUiEvent(
+          remote ? CallUiEventType.remoteEnded : CallUiEventType.ended,
+          callId: callKitParams.id,
+        ));
       case CallEventActionCallTimeout(:final id):
         _pluginCalls.remove(id);
         _emit(CallUiEvent(CallUiEventType.timeout, callId: id));

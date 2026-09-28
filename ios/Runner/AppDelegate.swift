@@ -32,6 +32,15 @@ import flutter_callkit_incoming
     // lock-screen-but-no-audio bug.
     RTCAudioSession.sharedInstance().useManualAudio = true
 
+    // Before PushKit is armed, not after: a VoIP push can launch the app in the
+    // background with no Flutter engine — and so no registered plugin — and the
+    // push handler below must still be able to report the call. The plugin
+    // instance is only a CallManager until Flutter attaches its channels to it
+    // (see ensureSharedInstance), so making it here costs nothing and removes
+    // the launch on which a push was silently dropped and its completion never
+    // called.
+    _ = SwiftFlutterCallkitIncomingPlugin.ensureSharedInstance()
+
     let registry = PKPushRegistry(queue: .main)
     registry.delegate = self
     registry.desiredPushTypes = [.voIP]
@@ -191,8 +200,17 @@ import flutter_callkit_incoming
     // Teach Siri the family names so it recognises «Позвони Аиде». Needs the
     // Siri entitlement (now present); the App Group snapshot above is what the
     // extension reads to resolve the spoken name to a uid.
+    //
+    // An EMPTY list is a real instruction, not a no-op: it is what sign-out
+    // syncs. The contacts.json written above is then `[]`, so the extension
+    // resolves nobody, and the vocabulary has to be removed explicitly —
+    // setVocabularyStrings with an empty set is not documented to clear it, and
+    // skipping the call (the old `if !names.isEmpty`) left the previous
+    // account's family names taught to Siri on a signed-out phone.
     let names = contacts.compactMap { $0["displayName"] as? String }.filter { !$0.isEmpty }
-    if !names.isEmpty {
+    if names.isEmpty {
+      INVocabulary.shared().removeAllVocabularyStrings()
+    } else {
       INVocabulary.shared().setVocabularyStrings(NSOrderedSet(array: names), of: .contactName)
     }
   }
@@ -204,12 +222,12 @@ import flutter_callkit_incoming
   ) {
     guard type == .voIP else { return }
     let token = pushCredentials.token.map { String(format: "%02x", $0) }.joined()
-    SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP(token)
+    SwiftFlutterCallkitIncomingPlugin.ensureSharedInstance().setDevicePushTokenVoIP(token)
   }
 
   func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
     guard type == .voIP else { return }
-    SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP("")
+    SwiftFlutterCallkitIncomingPlugin.ensureSharedInstance().setDevicePushTokenVoIP("")
   }
 
   func pushRegistry(
@@ -226,29 +244,54 @@ import flutter_callkit_incoming
     // same run loop, before completion — the app may be terminated and Dart
     // not running. Failure = 0xbaadca11 crash and push throttling.
     let payloadDict = payload.dictionaryPayload
-    // Cancel push: the caller hung up before we answered. Apple still requires
-    // reporting a call for every VoIP push, so report this id then immediately
-    // end it — the ring is dismissed instead of ringing to the 45s timeout.
-    if (payloadDict["cancel"] as? String) == "true" {
-      let callId = payloadDict["callId"] as? String ?? UUID().uuidString
-      let endData = flutter_callkit_incoming.Data(args: [
-        "id": callId,
-        "nameCaller": "",
-        "handle": "",
-        "appName": "Звонилка",
-        "type": 0,
-      ])
-      let plugin = SwiftFlutterCallkitIncomingPlugin.sharedInstance
-      plugin?.showCallkitIncoming(endData, fromPushKit: true, completion: completion)
-      plugin?.endCall(endData)
+    // Never `sharedInstance?`: on a background launch Flutter may not have
+    // registered the plugin yet, and optional chaining on nil reported nothing
+    // AND never called completion. This creates the instance if need be.
+    let plugin = SwiftFlutterCallkitIncomingPlugin.ensureSharedInstance()
+    let appName = "Звонилка"
+    let callerName = (payloadDict["callerName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    let isCancel = (payloadDict["cancel"] as? String) == "true"
+
+    // The call id must be a UUID — CallKit takes nothing else. The plugin
+    // answers a non-UUID by calling completion WITHOUT reporting a call, which
+    // is precisely what gets the app killed, so it is never handed one: a push
+    // with a missing or malformed id is reported under a fresh UUID and ended
+    // as failed in the same breath. The user is never rung for garbage — for
+    // someone who cannot see the screen, a ring that can only be answered into
+    // nothing is worse than no ring.
+    guard let callId = payloadDict["callId"] as? String,
+      let uuid = UUID(uuidString: callId)
+    else {
+      NSLog("[Freecaller] VoIP push with invalid callId — reported and ended")
+      plugin.reportAndEndCall(
+        uuid: UUID(), callerName: callerName ?? appName, appName: appName,
+        reason: .failed, completion: completion)
       return
     }
+
+    // Cancel push: the caller hung up before we answered. If the ring is up,
+    // this ends it as REMOTE-ended — no CXEndCallAction, so Dart is told
+    // `ended`, not that the user declined. If it is not (the cancel overtook
+    // its ring, or the ring was already dealt with), Apple still wants a call
+    // reported for this push, so one is reported and ended inside the report's
+    // completion. Either way the live provider's configuration, the plugin's
+    // stored data for a call in progress and the audio session are left alone;
+    // the details are on reportAndEndCall.
+    if isCancel {
+      plugin.reportAndEndCall(
+        uuid: uuid, callerName: callerName ?? appName, appName: appName,
+        reason: .remoteEnded, completion: completion)
+      return
+    }
+
     let isVideo = (payloadDict["video"] as? String) == "true"
     let callData = flutter_callkit_incoming.Data(args: [
-      "id": payloadDict["callId"] as? String ?? UUID().uuidString,
-      "nameCaller": payloadDict["callerName"] as? String ?? "Звонилка",
+      // The string as the server sent it, not uuid.uuidString (which is
+      // upper-case): Dart matches events to its session by this exact id.
+      "id": callId,
+      "nameCaller": callerName ?? appName,
       "handle": payloadDict["callerPhone"] as? String ?? "",
-      "appName": "Звонилка",
+      "appName": appName,
       // Always report the call as video-capable so iOS foregrounds the app on
       // answer (even from the lock screen) — landing on our in-call screen with
       // the video button instead of the native UI. The real voice/video mode
@@ -263,8 +306,7 @@ import flutter_callkit_incoming
       "supportsUngrouping": false,
       "audioSessionMode": isVideo ? "videoChat" : "voiceChat",
     ])
-    SwiftFlutterCallkitIncomingPlugin.sharedInstance?.showCallkitIncoming(
-      callData, fromPushKit: true, completion: completion)
+    plugin.showCallkitIncoming(callData, fromPushKit: true, completion: completion)
   }
 
   // MARK: - CallkitIncomingAppDelegate (CXProvider forwarding)

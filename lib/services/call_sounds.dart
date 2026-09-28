@@ -81,7 +81,11 @@ class CallSounds {
     try {
       await _ringback.setReleaseMode(ReleaseMode.loop);
       await _ringback.setVolume(1.0);
+      // stopRingback() can land inside any await above (the callee answering at
+      // once); starting the loop after it left the tone playing over the call.
+      if (!_ringbackActive) return;
       await _ringback.play(AssetSource('sounds/ringback.wav'));
+      if (!_ringbackActive) await _ringback.stop();
     } catch (e) {
       log('call sounds: ringback failed', error: e);
     }
@@ -106,7 +110,9 @@ class CallSounds {
     try {
       await _ringback.stop();
       await _ringback.setReleaseMode(ReleaseMode.loop);
+      if (!_ringbackActive) return; // stopped while rerouting — see startRingback
       await _ringback.play(AssetSource('sounds/ringback.wav'));
+      if (!_ringbackActive) await _ringback.stop();
     } catch (e) {
       log('call sounds: ringback reroute failed', error: e);
     }

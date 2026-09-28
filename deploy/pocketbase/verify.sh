@@ -6,7 +6,8 @@
 # cannot resurrect a terminal call, cannot read someone else's call — and that
 # deleting an account really does cascade.
 #
-# Run ON the server. Creates two temporary users and deletes them again.
+# Run ON the server. Creates a few temporary users and deletes them again —
+# ALWAYS, including when it is interrupted or dies halfway: see cleanup() below.
 #
 #   bash verify.sh
 #
@@ -15,6 +16,13 @@ set -uo pipefail
 PB="http://127.0.0.1:8090"
 SU_EMAIL="${SU_EMAIL:-unnanego@gmail.com}"
 FAILED=0
+
+# Filled in as the run goes; cleanup() only ever touches what is recorded here
+# or what matches the verify-*@example.invalid naming this script owns.
+SU_TOKEN=""
+A_REPORT=""
+REVIEW_FILE=/etc/freecaller/review-otp.json
+CREATED_REVIEW_FILE=0
 
 read -rs -p "superuser password for $SU_EMAIL: " SU_PW; echo; echo
 
@@ -55,6 +63,60 @@ reject() { # actual label
 
 section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
+# Delete every account this script could have created — by NAME, not by the ids
+# held in variables, so that it also finds what an earlier run left behind when
+# it died before its own cleanup (a Ctrl-C at the password prompt of section 10,
+# a dropped ssh session). Those leftovers are not harmless: they are real,
+# sign-in-able accounts in the production roster, the next run cannot even start
+# because the emails are taken, and a leftover review-otp.json is a FIXED
+# sign-in code for one of them.
+#
+# The address pattern is the contract: verify-…@example.invalid. `.invalid` is
+# reserved (RFC 2606), so no real account can ever match it. Deleting a user
+# cascades to their devices and purges their calls (pb_hooks/users.pb.js).
+purge_test_users() {
+  [ -n "$SU_TOKEN" ] || return 0
+  local ids id
+  ids=$(curl -s -G "$PB/api/collections/users/records" \
+      -H "Authorization: $SU_TOKEN" \
+      --data-urlencode "filter=email ~ 'verify-%' && email ~ '%@example.invalid'" \
+      --data-urlencode "perPage=200" --data-urlencode "fields=id,email" \
+    | python3 -c '
+import json, sys
+try:
+    items = json.load(sys.stdin).get("items", [])
+except ValueError:
+    items = []
+for item in items:
+    email = item.get("email", "")
+    # Re-checked here, exactly: the filter above is a LIKE, this is the rule.
+    if email.startswith("verify-") and email.endswith("@example.invalid"):
+        print(item["id"])
+' 2>/dev/null)
+  for id in $ids; do
+    req DELETE "/api/collections/users/records/$id" "$SU_TOKEN" >/dev/null
+  done
+}
+
+cleanup() {
+  local status=$?
+  trap - EXIT INT TERM
+  # The review file first, and ONLY if this run wrote it: a file that was there
+  # before us is somebody's live App Review configuration.
+  if [ "$CREATED_REVIEW_FILE" = "1" ]; then
+    rm -f "$REVIEW_FILE"
+    CREATED_REVIEW_FILE=0
+  fi
+  purge_test_users
+  if [ -n "$A_REPORT" ] && [ -n "$SU_TOKEN" ]; then
+    req DELETE "/api/collections/reports/records/$A_REPORT" "$SU_TOKEN" >/dev/null
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # ---------- authenticate as superuser ---------------------------------------
 section "0. superuser auth"
 R=$(req POST /api/collections/_superusers/auth-with-password "" \
@@ -65,6 +127,10 @@ if [ -z "${SU_TOKEN:-}" ]; then
   echo "  could not authenticate as superuser:"; body "$R" | head -5; exit 1
 fi
 echo "  authenticated"
+
+# Leftovers from a run that never reached its cleanup would make every mkuser
+# below fail on a taken email.
+purge_test_users
 
 # ---------- create two test users -------------------------------------------
 section "1. provision test users (superuser only — createRule is null)"
@@ -118,11 +184,74 @@ R=$(req POST /api/collections/calls/records "$A_TOK" \
   "{\"id\":$(printf '"%s"' "$(cat /proc/sys/kernel/random/uuid)"),\"callerId\":\"$ALICE\",\"calleeId\":\"$BOB\",\"state\":\"accepted\"}")
 reject "$(code "$R")" "a call CANNOT be created already 'accepted'"
 
+# iOS drops a VoIP push whose callId is not a UUID, and punishes the app for it.
+R=$(req POST /api/collections/calls/records "$A_TOK" \
+  "{\"id\":\"not-a-uuid-but-long-enough-0001\",\"callerId\":\"$ALICE\",\"calleeId\":\"$BOB\",\"state\":\"ringing\"}")
+reject "$(code "$R")" "a call id that is not a UUID is refused"
+
+R=$(req POST /api/collections/calls/records "$A_TOK" \
+  "{\"id\":$(printf '"%s"' "$(cat /proc/sys/kernel/random/uuid)"),\"callerId\":\"$ALICE\",\"calleeId\":\"nobody000000000\",\"state\":\"ringing\"}")
+reject "$(code "$R")" "a call to an account that does not exist is refused"
+
+# What gets announced to the callee is the SERVER's idea of who is calling.
+# (Carol is not in anyone's contacts: discovered people are callable too.)
+SPOOF=$(cat /proc/sys/kernel/random/uuid)
+R=$(req POST /api/collections/calls/records "$A_TOK" \
+  "{\"id\":\"$SPOOF\",\"callerId\":\"$ALICE\",\"calleeId\":\"$CAROL\",\"callerName\":\"Your Daughter\",\"callerPhone\":\"+70000000000\",\"ringExpiresAt\":\"2099-01-01 00:00:00.000Z\",\"state\":\"ringing\"}")
+check 200 "$(code "$R")" "alice rings carol, claiming to be somebody else"
+SPOOF_NAME=$(body "$R" | jqp 'd["callerName"]')
+SPOOF_EXP=$(body "$R" | jqp 'd["ringExpiresAt"]')
+if [ "$SPOOF_NAME" = "Alice" ]; then
+  printf '  \033[32mPASS\033[0m    -> callerName was overwritten from her account (%s)\n' "$SPOOF_NAME"
+else
+  printf '  \033[31mFAIL\033[0m    -> callerName is client-controlled: %s\n' "$SPOOF_NAME"
+  FAILED=$((FAILED+1))
+fi
+if [ -n "$SPOOF_EXP" ] && [[ "$SPOOF_EXP" != 2099* ]]; then
+  printf '  \033[32mPASS\033[0m    -> ringExpiresAt was set by the server (%s)\n' "$SPOOF_EXP"
+else
+  printf '  \033[31mFAIL\033[0m    -> ringExpiresAt is client-controlled: %s\n' "$SPOOF_EXP"
+  FAILED=$((FAILED+1))
+fi
+req PATCH "/api/collections/calls/records/$SPOOF" "$A_TOK" '{"state":"cancelled"}' >/dev/null
+
 # ---------- visibility -------------------------------------------------------
 section "4. visibility"
 check 200 "$(code "$(req GET "/api/collections/calls/records/$CALL" "$B_TOK")")" "bob (callee) can read the call"
 reject "$(code "$(req GET "/api/collections/calls/records/$CALL" "$C_TOK")")" "carol (outsider) CANNOT read the call"
 reject "$(code "$(req GET "/api/collections/calls/records/$CALL" "")")" "anonymous CANNOT read the call"
+
+# The roster is not public to everyone who can sign in. Bob lists Alice; Carol
+# is linked to nobody — she stands in for a review account or an invited
+# stranger.
+check 200 "$(code "$(req GET "/api/collections/users/records/$ALICE" "$B_TOK")")" "bob can read alice (she is in his contacts)"
+check 200 "$(code "$(req GET "/api/collections/users/records/$BOB" "$A_TOK")")" "alice can read bob (he lists her)"
+check 200 "$(code "$(req GET "/api/collections/users/records/$CAROL" "$C_TOK")")" "carol can read herself"
+reject "$(code "$(req GET "/api/collections/users/records/$ALICE" "$C_TOK")")" "carol (unconnected) CANNOT read alice's profile"
+reject "$(code "$(req GET "/api/collections/users/records/$ALICE" "")")" "anonymous CANNOT read a profile"
+SEEN=$(body "$(req GET "/api/collections/users/records?perPage=200" "$C_TOK")" | jqp 'len(d["items"])')
+if [ "$SEEN" = "1" ]; then
+  printf '  \033[32mPASS\033[0m  carol listing the roster sees only herself\n'
+else
+  printf '  \033[31mFAIL\033[0m  carol listing the roster sees %s account(s)\n' "$SEEN"
+  FAILED=$((FAILED+1))
+fi
+SEEN=$(body "$(req GET "/api/collections/users/records?perPage=200" "")" | jqp 'len(d["items"])')
+if [ "$SEEN" = "0" ]; then
+  printf '  \033[32mPASS\033[0m  anonymous listing the roster sees nobody\n'
+else
+  printf '  \033[31mFAIL\033[0m  anonymous listing the roster sees %s account(s)\n' "$SEEN"
+  FAILED=$((FAILED+1))
+fi
+# The read the app actually makes: own record with contacts expanded.
+EXPANDED=$(body "$(req GET "/api/collections/users/records/$BOB?expand=contacts" "$B_TOK")" \
+  | jqp '[c["id"] for c in d.get("expand",{}).get("contacts",[])]')
+if [[ "$EXPANDED" == *"$ALICE"* ]]; then
+  printf '  \033[32mPASS\033[0m  expand=contacts still resolves (the client'"'"'s roster read)\n'
+else
+  printf '  \033[31mFAIL\033[0m  expand=contacts came back without alice: %s\n' "$EXPANDED"
+  FAILED=$((FAILED+1))
+fi
 
 # ---------- state machine ----------------------------------------------------
 section "5. state machine (the hook)"
@@ -135,14 +264,51 @@ reject "$(code "$R")" "participants are immutable (callerId swap rejected)"
 R=$(req PATCH "/api/collections/calls/records/$CALL" "$B_TOK" '{"state":"ended"}')
 reject "$(code "$R")" "ringing -> ended is ILLEGAL"
 
+# Legal is not enough — it has to be THAT participant's transition to make.
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$A_TOK" '{"state":"accepted"}')
+reject "$(code "$R")" "the CALLER cannot accept her own outgoing call"
+
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$B_TOK" '{"state":"cancelled"}')
+reject "$(code "$R")" "the CALLEE cannot cancel (that is the caller's)"
+
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$B_TOK" '{"state":"missed"}')
+reject "$(code "$R")" "the CALLEE cannot mark it missed (that is the caller's)"
+
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$B_TOK" '{"callerName":"Mallory"}')
+reject "$(code "$R")" "callerName is immutable once the call exists"
+
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$A_TOK" '{"ringExpiresAt":"2099-01-01 00:00:00.000Z"}')
+reject "$(code "$R")" "ringExpiresAt is immutable (the sweep trusts it)"
+
 R=$(req PATCH "/api/collections/calls/records/$CALL" "$B_TOK" '{"state":"accepted"}')
-check 200 "$(code "$R")" "ringing -> accepted is legal"
+check 200 "$(code "$R")" "ringing -> accepted is legal (by the callee)"
+
+# Unchanged behaviour, pinned down: writing the state a call already has is not
+# a transition, so it is neither illegal nor anybody's in particular. (The
+# native UI can deliver "accept" twice.)
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$B_TOK" '{"state":"accepted","acceptedAt":"2026-01-01 00:00:00.000Z"}')
+check 200 "$(code "$R")" "re-sending the SAME state is a no-op, not an error"
+
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$A_TOK" '{"state":"cancelled"}')
+reject "$(code "$R")" "accepted -> cancelled is ILLEGAL (the caller's late cancel loses)"
 
 R=$(req PATCH "/api/collections/calls/records/$CALL" "$B_TOK" '{"state":"declined"}')
 reject "$(code "$R")" "accepted -> declined is ILLEGAL"
 
-R=$(req PATCH "/api/collections/calls/records/$CALL" "$A_TOK" '{"state":"ended","endedBy":"alice"}')
-check 200 "$(code "$R")" "accepted -> ended is legal"
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$A_TOK" "{\"state\":\"ended\",\"endedBy\":\"$BOB\"}")
+reject "$(code "$R")" "endedBy CANNOT name somebody else"
+
+# …and that refused request must not have half-applied: still accepted.
+STATE=$(body "$(req GET "/api/collections/calls/records/$CALL" "$A_TOK")" | jqp 'd["state"]')
+if [ "$STATE" = "accepted" ]; then
+  printf '  \033[32mPASS\033[0m    -> the refused write left the call accepted\n'
+else
+  printf '  \033[31mFAIL\033[0m    -> the refused write changed state to %s\n' "$STATE"
+  FAILED=$((FAILED+1))
+fi
+
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$A_TOK" "{\"state\":\"ended\",\"endedBy\":\"$ALICE\"}")
+check 200 "$(code "$R")" "accepted -> ended is legal (either side, endedBy = self)"
 
 R=$(req PATCH "/api/collections/calls/records/$CALL" "$A_TOK" '{"state":"accepted"}')
 reject "$(code "$R")" "ended -> accepted is ILLEGAL (terminal state is final)"
@@ -161,6 +327,24 @@ A_DEV=$(body "$R" | jqp 'd["id"]')
 R=$(req POST /api/collections/devices/records "$A_TOK" \
   "{\"user\":\"$BOB\",\"deviceId\":\"verify-install-stolen\",\"platform\":\"ios\",\"voipToken\":\"stolen\"}")
 reject "$(code "$R")" "alice CANNOT register a device for bob"
+
+# …nor hand one she already owns to him: the fan-out finds devices by `user`, so
+# a re-parented row would ring HER phone for HIS calls.
+R=$(req PATCH "/api/collections/devices/records/$A_DEV" "$A_TOK" "{\"user\":\"$BOB\"}")
+reject "$(code "$R")" "alice CANNOT re-parent her device to bob"
+OWNER=$(body "$(req GET "/api/collections/devices/records/$A_DEV" "$SU_TOKEN")" | jqp 'd["user"]')
+if [ "$OWNER" = "$ALICE" ]; then
+  printf '  \033[32mPASS\033[0m    -> the device still belongs to alice\n'
+else
+  printf '  \033[31mFAIL\033[0m    -> the device now belongs to %s\n' "$OWNER"
+  FAILED=$((FAILED+1))
+fi
+# What the shipped client sends on every re-registration: its own uid again.
+R=$(req PATCH "/api/collections/devices/records/$A_DEV" "$A_TOK" \
+  "{\"user\":\"$ALICE\",\"deviceId\":\"$A_INSTALL\",\"platform\":\"ios\",\"voipToken\":\"verify-token-2\"}")
+check 200 "$(code "$R")" "alice CAN update her own device (the client's upsert body)"
+R=$(req PATCH "/api/collections/devices/records/$A_DEV" "$A_TOK" '{"voipToken":"verify-token"}')
+check 200 "$(code "$R")" "a partial update that does not mention 'user' still works"
 
 reject "$(code "$(req GET "/api/collections/devices/records/$A_DEV" "$B_TOK")")" "bob CANNOT read alice's push token"
 
@@ -393,12 +577,23 @@ fi
 # ---------- fixed reviewer codes ---------------------------------------------
 section "10. pinned review codes (pb_hooks/review_otp.pb.js)"
 
-REVIEW_FILE=/etc/freecaller/review-otp.json
 if [ -e "$REVIEW_FILE" ]; then
   echo "  SKIP — $REVIEW_FILE exists; not touching a live review config"
 else
-  PINNED="13571357"
-  printf '{"verify-carol@example.invalid":"%s"}\n' "$PINNED" > "$REVIEW_FILE"
+  # Random per run: a constant here would be a published sign-in code for as
+  # long as a crashed run left the file behind.
+  PINNED=$(python3 -c "import secrets;print('%08d' % secrets.randbelow(10**8))")
+  # Flag BEFORE the write, so an interrupt between the two still cleans up;
+  # noclobber so that a file appearing in between is never overwritten (or,
+  # later, deleted) by us.
+  CREATED_REVIEW_FILE=1
+  if ! ( set -o noclobber; umask 027; \
+         printf '{"verify-carol@example.invalid":"%s"}\n' "$PINNED" > "$REVIEW_FILE" ) 2>/dev/null; then
+    CREATED_REVIEW_FILE=0
+    echo "  SKIP — could not create $REVIEW_FILE"
+  fi
+fi
+if [ "$CREATED_REVIEW_FILE" = "1" ]; then
   chmod 640 "$REVIEW_FILE"; chgrp pocketbase "$REVIEW_FILE" 2>/dev/null
 
   # request-otp mails the (ignored) generated code, so a mail transport that
@@ -425,6 +620,7 @@ else
   fi
 
   rm -f "$REVIEW_FILE"
+  CREATED_REVIEW_FILE=0
   echo "  ($REVIEW_FILE removed — the file IS the off switch)"
 fi
 
@@ -455,9 +651,19 @@ fi
 
 # ---------- cleanup ----------------------------------------------------------
 section "12. cleanup"
-for u in "$BOB" "$CAROL" "$INVITEE"; do req DELETE "/api/collections/users/records/$u" "$SU_TOKEN" >/dev/null; done
+# The same purge the EXIT trap runs; done here as well so that the result can be
+# checked and reported while there is still someone reading.
+purge_test_users
 req DELETE "/api/collections/reports/records/$A_REPORT" "$SU_TOKEN" >/dev/null
-echo "  test users and report removed"
+A_REPORT=""
+LEFT=$(curl -s -G "$PB/api/collections/users/records" -H "Authorization: $SU_TOKEN" \
+  --data-urlencode "filter=email ~ '%@example.invalid'" | jqp 'd["totalItems"]')
+if [ "$LEFT" = "0" ]; then
+  echo "  test users and report removed"
+else
+  printf '  \033[31mFAIL\033[0m  %s test account(s) still exist — delete them from the dashboard\n' "$LEFT"
+  FAILED=$((FAILED+1))
+fi
 
 # ---------- result -----------------------------------------------------------
 if [ "$FAILED" -eq 0 ]; then

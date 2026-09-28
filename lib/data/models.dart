@@ -96,6 +96,10 @@ class PeerAvatars {
 
 enum CallState { ringing, accepted, declined, cancelled, missed, ended }
 
+/// Unknown reads as `ended`, which is right for a list of past calls and wrong
+/// for a live one — the engine hangs up on `ended`. `CallRepo.watchCall`
+/// therefore checks the raw string itself and never lets an unrecognised state
+/// reach this fallback.
 CallState callStateFrom(String? raw) =>
     CallState.values.firstWhere((s) => s.name == raw, orElse: () => CallState.ended);
 
@@ -122,6 +126,13 @@ class CallDoc {
 
   /// `createdAt` comes from the record's own `created` autodate rather than a
   /// field we write.
+  ///
+  /// The server sends it as a `...Z` string, which parses to a UTC [DateTime]
+  /// whose `hour` and `day` are UTC's. It is shown to a person (the history
+  /// list prints the hour and asks "was that today?"), so it is converted to
+  /// local time once, here, rather than by every reader remembering to. The one
+  /// place that does arithmetic on it (`findRingingFor`) converts back to UTC
+  /// itself, and a difference between instants is the same either way.
   factory CallDoc.fromRecord(RecordModel record) => CallDoc(
         callId: record.id,
         callerId: record.get<String>('callerId', ''),
@@ -130,7 +141,7 @@ class CallDoc {
         callerPhone: record.get<String>('callerPhone', ''),
         isVideo: record.get<bool>('isVideo', false),
         state: callStateFrom(record.get<String>('state', '')),
-        createdAt: DateTime.tryParse(record.get<String>('created', '')),
+        createdAt: DateTime.tryParse(record.get<String>('created', ''))?.toLocal(),
       );
 
   /// Value equality lets a watch skip re-emitting an unchanged call — needed

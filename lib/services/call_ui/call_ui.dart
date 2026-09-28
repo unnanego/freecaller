@@ -35,6 +35,12 @@ enum CallUiEventType {
   accept,
   decline,
   ended,
+
+  /// The native layer closed the ring because the CALLER gave up (the cancel
+  /// push). Not [ended]: on iOS that one also stands for the user declining,
+  /// and the engine answers it by writing `declined` — which for a call the
+  /// caller already cancelled is a rejected write and a false line in history.
+  remoteEnded,
   timeout,
   audioSessionActivated,
   audioSessionDeactivated,

@@ -20,6 +20,8 @@ class ContactAccessSheet extends StatefulWidget {
 class _ContactAccessSheetState extends State<ContactAccessSheet> {
   bool _loading = true;
   bool _needsConsent = false;
+  /// The load threw, so there is nothing truthful to list. See [_load].
+  bool _failed = false;
   ContactAccess _access = ContactAccess.granted;
   List<DiscoveredContact> _all = const [];
   Set<String> _blocked = {};
@@ -31,19 +33,27 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
   }
 
   Future<void> _load() async {
-    // Never read/upload the address book before the user has consented
-    // (Guideline 5.1.2) — show the consent prompt instead.
-    if (!await widget.discovery.hasUploadConsent()) {
-      if (!mounted) return;
+    // Retry: back to the spinner while it has another go.
+    if (_failed) {
       setState(() {
-        _loading = false;
-        _needsConsent = true;
+        _failed = false;
+        _loading = true;
       });
-      return;
     }
     var access = ContactAccess.granted;
     List<DiscoveredContact>? all;
+    final Set<String> blocked;
     try {
+      // Never read/upload the address book before the user has consented
+      // (Guideline 5.1.2) — show the consent prompt instead.
+      if (!await widget.discovery.hasUploadConsent()) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _needsConsent = true;
+        });
+        return;
+      }
       all = await widget.discovery.loadDeviceContacts();
       if (all == null) {
         // Opened without access. Ask the OS — once — and take the answer as
@@ -54,13 +64,23 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
           all = await widget.discovery.loadDeviceContacts();
         }
       }
-    } on ContactMatchException {
-      // Couldn't ask who is registered. The device contacts are still worth
-      // showing with their allow toggles — only the "on app" badge is unknown —
-      // so fall through with whatever we have rather than an empty sheet.
-      all = null;
+      blocked = await widget.discovery.blockedIds();
+    } catch (_) {
+      // Couldn't ask who is registered (ContactMatchException), or the contacts
+      // plugin or the preferences store threw — caught broadly, because
+      // anything escaping here leaves the spinner up for good.
+      //
+      // The repo hands back the address book and the match together or not at
+      // all, so there is no list to show "with the badge unknown". This used to
+      // fall through with an empty one, which rendered as a blank sheet over a
+      // "Done (0)" button: an answer nobody had computed. Say it failed.
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _failed = true;
+      });
+      return;
     }
-    final blocked = await widget.discovery.blockedIds();
     if (!mounted) return;
     setState(() {
       _loading = false;
@@ -125,6 +145,8 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator(color: Mod.accent))
+                  : _failed
+                      ? _failedBody(loc)
                   : _needsConsent
                       ? _consentBody(loc)
                       : _access != ContactAccess.granted
@@ -139,10 +161,49 @@ class _ContactAccessSheetState extends State<ContactAccessSheet> {
                           ),
                         ),
             ),
-            if (!_needsConsent && _access == ContactAccess.granted)
+            if (!_failed && !_needsConsent && _access == ContactAccess.granted)
               _doneButton(loc, allowedCount),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Shown in place of the list when it could not be loaded.
+  Widget _failedBody(AppLocalizations loc) {
+    return Padding(
+      padding: const EdgeInsets.all(Mod.s6),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const ExcludeSemantics(
+            child: Icon(Icons.cloud_off_outlined, color: Mod.neutral500, size: 44),
+          ),
+          const SizedBox(height: Mod.s4),
+          // liveRegion: the spinner it replaces goes silently, so this is the
+          // only way a screen-reader user hears that the load ended.
+          Semantics(
+            liveRegion: true,
+            child: Text(loc.contactsLoadFailed,
+                textAlign: TextAlign.center, style: Mod.body()),
+          ),
+          const SizedBox(height: Mod.s6),
+          Semantics(
+            button: true,
+            label: loc.retry,
+            child: InkWell(
+              onTap: _load,
+              child: Container(
+                color: Mod.accent,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: Mod.s6, vertical: 16),
+                child: ExcludeSemantics(
+                  child: Text(loc.retry, style: Mod.button()),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -307,7 +368,11 @@ class _AccessRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: Mod.s6, vertical: Mod.s3),
           child: Row(
             children: [
-              InitialsTile(name: contact.name, imageUrl: contact.avatarUrl),
+              // Decoration: the row's label already names them, and a tile of
+              // initials is read out as two stray letters.
+              ExcludeSemantics(
+                child: InitialsTile(name: contact.name, imageUrl: contact.avatarUrl),
+              ),
               const SizedBox(width: Mod.s3),
               Expanded(
                 child: ExcludeSemantics(

@@ -17,7 +17,8 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private var wifiLock: WifiManager.WifiLock? = null
+    // One or two Wi-Fi locks, depending on the API level — see acquireLocks.
+    private var wifiLocks: List<WifiManager.WifiLock> = emptyList()
     private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
@@ -67,8 +68,9 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "pick" -> {
-                        PhotoPickerBridge.begin(result)
+                        val ticket = PhotoPickerBridge.begin(result)
                         val intent = Intent(this, PhotoPickerActivity::class.java)
+                            .putExtra(PhotoPickerActivity.EXTRA_TICKET, ticket)
                             .putExtra(
                                 PhotoPickerActivity.EXTRA_CAMERA,
                                 call.argument<Boolean>("camera") ?: false,
@@ -91,19 +93,40 @@ class MainActivity : FlutterActivity() {
     // the media connection times out / drops a few seconds in. These locks
     // prevent that; they touch neither audio focus nor routing.
     private fun acquireLocks() {
-        if (wifiLock == null) {
+        if (wifiLocks.isEmpty()) {
             val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            // LOW_LATENCY (API 29+) disables power-save and minimises latency while
-            // foreground; HIGH_PERF is the pre-29 equivalent (just no power-save).
-            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-            } else {
-                @Suppress("DEPRECATION")
-                WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            // LOW_LATENCY (API 29+) is only honoured while the screen is ON and
+            // the app is in the foreground. A voice call is held to the ear:
+            // the proximity sensor turns the screen off, the lock goes
+            // dormant, Wi-Fi power-save resumes and starves ICE — the very
+            // thing this lock was taken to prevent, in the most ordinary way
+            // of using a phone. HIGH_PERF is deprecated but IS honoured with
+            // the screen off, so below API 34 it is held as well (alone before
+            // 29, where LOW_LATENCY does not exist). From 34 the platform
+            // silently converts a HIGH_PERF request into LOW_LATENCY, so a
+            // second lock there would add nothing; the screen-off gap on 34+
+            // is what the PARTIAL_WAKE_LOCK below and, for answered calls, the
+            // plugin's foreground service are left to cover.
+            val modes = buildList {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    add(WifiManager.WIFI_MODE_FULL_LOW_LATENCY)
+                }
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    @Suppress("DEPRECATION")
+                    add(WifiManager.WIFI_MODE_FULL_HIGH_PERF)
+                }
             }
-            wifiLock = wifi.createWifiLock(mode, "freecaller:call")
+            wifiLocks = modes.map { wifi.createWifiLock(it, "freecaller:call:$it") }
         }
-        wifiLock?.takeIf { !it.isHeld }?.acquire()
+        // Each one separately, so a lock the platform refuses cannot cost us
+        // the other — or the CPU wake lock below.
+        for (lock in wifiLocks) {
+            try {
+                if (!lock.isHeld) lock.acquire()
+            } catch (e: Exception) {
+                android.util.Log.w("FreecallerLocks", "wifi lock refused", e)
+            }
+        }
 
         if (wakeLock == null) {
             val power = applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -320,7 +343,15 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun releaseLocks() {
-        wifiLock?.takeIf { it.isHeld }?.release()
+        // Every Wi-Fi lock acquireLocks took, each on its own: a release that
+        // throws must not leave the other one (or the wake lock) held.
+        for (lock in wifiLocks) {
+            try {
+                if (lock.isHeld) lock.release()
+            } catch (e: Exception) {
+                android.util.Log.w("FreecallerLocks", "wifi lock release failed", e)
+            }
+        }
         wakeLock?.takeIf { it.isHeld }?.release()
     }
 

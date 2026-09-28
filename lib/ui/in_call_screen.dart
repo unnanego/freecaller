@@ -56,7 +56,9 @@ class _InCallScreenState extends State<InCallScreen> {
   bool _localFullscreen = false;
   Timer? _timer;
   StreamSubscription<int>? _proximitySub;
-  bool _proximityOn = false;
+  bool _proximityOn = false; // what has been applied
+  bool _proximityWanted = false; // what the latest build asked for
+  Future<void> _proximityWork = Future.value();
   final CallLocks _locks = CallLocks();
   bool _keepAwake = false;
   // Video chrome (name/timer + controls) auto-hides a few seconds after it
@@ -64,6 +66,9 @@ class _InCallScreenState extends State<InCallScreen> {
   bool _controlsVisible = true;
   bool _hideScheduled = false;
   Timer? _hideTimer;
+  // A screen reader (or switch access) is driving the phone. Refreshed on every
+  // build from MediaQuery; see [_pinControlsForScreenReader].
+  bool _screenReader = false;
 
   CallEngine get engine => widget.engine;
   LiveKitService get livekit => widget.livekit;
@@ -72,6 +77,8 @@ class _InCallScreenState extends State<InCallScreen> {
   void dispose() {
     _timer?.cancel();
     _hideTimer?.cancel();
+    // Any proximity step still queued must find nothing left to do.
+    _proximityWanted = false;
     _proximitySub?.cancel();
     ProximitySensor.setProximityScreenOff(false).catchError((Object _) {});
     // Leaving the call screen with the flag still set would keep the phone
@@ -83,13 +90,35 @@ class _InCallScreenState extends State<InCallScreen> {
   /// Fade the video chrome out after a spell of no interaction.
   void _armHide() {
     _hideTimer?.cancel();
+    _hideTimer = null;
+    if (_screenReader) return;
     _hideTimer = Timer(const Duration(seconds: 10), () {
-      if (mounted) setState(() => _controlsVisible = false);
+      // Checked again when it fires: VoiceOver can be switched on during the
+      // ten seconds this was pending.
+      if (mounted && !_screenReader) setState(() => _controlsVisible = false);
     });
+  }
+
+  /// The video chrome never hides while a screen reader is on.
+  ///
+  /// Hidden chrome is `opacity: 0` behind an IgnorePointer, which takes Mute,
+  /// Flip and — the one that matters — Hang up out of the semantics tree. For
+  /// someone who cannot see the screen that is not "tucked away", it is gone:
+  /// ten seconds into a video call there was no way left to end it. Fading the
+  /// buttons is a nicety for people watching the picture, so whoever is not
+  /// watching it simply does not get the fade. Called from build, so it follows
+  /// VoiceOver being switched on mid-call too.
+  void _pinControlsForScreenReader(bool screenReader) {
+    _screenReader = screenReader;
+    if (!screenReader) return;
+    _controlsVisible = true;
+    _hideTimer?.cancel();
+    _hideTimer = null;
   }
 
   /// Tap anywhere on the video toggles the chrome; showing it re-arms the fade.
   void _toggleControls() {
+    if (_screenReader) return; // pinned on — see above
     setState(() => _controlsVisible = !_controlsVisible);
     if (_controlsVisible) {
       _armHide();
@@ -101,12 +130,29 @@ class _InCallScreenState extends State<InCallScreen> {
   /// Blank the screen when held to the ear during a voice call (like a normal
   /// call); keep it on for video. Android only holds the screen-off wake lock
   /// while the events stream is listened — subscribing is what arms it there.
-  Future<void> _syncProximity(bool wantOn) async {
-    if (wantOn == _proximityOn) return;
+  ///
+  /// Called from build, so calls overlap: each records what is wanted and joins
+  /// one queue, and each queued step acts on what is wanted *by the time it
+  /// runs*, not on what its caller asked for. Unserialised, an "off" (or
+  /// dispose) landing while "on" was still awaiting the platform found no
+  /// subscription to cancel, and then "on" resumed and created one nobody would
+  /// ever cancel — on Android, a held screen-off wake lock after the call.
+  void _syncProximity(bool wantOn) {
+    if (wantOn == _proximityWanted) return;
+    _proximityWanted = wantOn;
+    _proximityWork = _proximityWork.then((_) => _applyProximity());
+  }
+
+  Future<void> _applyProximity() async {
+    final wantOn = _proximityWanted;
+    if (!mounted || wantOn == _proximityOn) return;
     _proximityOn = wantOn;
     try {
       if (wantOn) {
         await ProximitySensor.setProximityScreenOff(true);
+        // dispose() can land during that await; it cancels the subscription it
+        // can see, which is not this one yet.
+        if (!mounted) return;
         _proximitySub = ProximitySensor.events.listen((_) {});
       } else {
         await _proximitySub?.cancel();
@@ -160,6 +206,7 @@ class _InCallScreenState extends State<InCallScreen> {
   @override
   Widget build(BuildContext context) {
     _syncTimer();
+    _pinControlsForScreenReader(MediaQuery.of(context).accessibleNavigation);
     final loc = AppLocalizations.of(context)!;
     final session = engine.session;
     // Prefer the name from the user's own address book over the server name.
@@ -171,8 +218,17 @@ class _InCallScreenState extends State<InCallScreen> {
     _syncKeepAwake(isVideo); // …and video must not dim while it is being watched
     final dialing = engine.phase == EnginePhase.dialing;
     // Full spoken status for VoiceOver; the visual pieces are decoration.
-    final spoken = dialing ? loc.dialing(name) : loc.inCallWith(name);
-    final sub = dialing ? loc.connecting : _elapsed;
+    final reconnecting = engine.reconnecting;
+    final spoken = dialing
+        ? loc.dialing(name)
+        : reconnecting
+            ? loc.reconnecting
+            : loc.inCallWith(name);
+    final sub = dialing
+        ? loc.connecting
+        : reconnecting
+            ? loc.reconnecting
+            : _elapsed;
 
     // Voice keeps its controls always on; leaving video resets the auto-hide.
     if (!isVideo) {
@@ -288,16 +344,30 @@ class _InCallScreenState extends State<InCallScreen> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggleControls,
+      // The detector wraps the whole screen, buttons included, so its own tap
+      // action would land on an unnamed node that merely contains everything
+      // else. The feed below carries the action instead, as a leaf with a name.
+      excludeFromSemantics: true,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Active (fullscreen) feed.
-          ValueListenableBuilder<VideoTrack?>(
-            valueListenable:
-                _localFullscreen ? livekit.localVideo : livekit.remoteVideo,
-            builder: (context, track, _) => track != null
-                ? VideoTrackRenderer(track, fit: VideoViewFit.cover)
-                : const ColoredBox(color: _Call.bgBottom),
+          // Active (fullscreen) feed — and, for assistive tech that works from
+          // labels without being a screen reader (Voice Control, "tap …"), the
+          // named target for bringing the buttons back. With a screen reader on
+          // the buttons never leave, so there is nothing to toggle and no node:
+          // a button that does nothing is only noise to swipe past.
+          Semantics(
+            container: true,
+            button: !_screenReader,
+            label: _screenReader ? null : loc.toggleCallControls,
+            onTap: _screenReader ? null : _toggleControls,
+            child: ValueListenableBuilder<VideoTrack?>(
+              valueListenable:
+                  _localFullscreen ? livekit.localVideo : livekit.remoteVideo,
+              builder: (context, track, _) => track != null
+                  ? VideoTrackRenderer(track, fit: VideoViewFit.cover)
+                  : const ColoredBox(color: _Call.bgBottom),
+            ),
           ),
           // Name/timer + controls fade together; the feed and self-view stay.
           AnimatedOpacity(

@@ -106,6 +106,8 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   String? _signInEmail;
   bool _bootstrapFailed = false;
   CallOutcome _announcedOutcome = CallOutcome.none;
+  bool _announcedReconnecting = false;
+  bool _bootstrapping = false;
 
   StreamSubscription<UserProfile?>? _profileBootSub;
   StreamSubscription<UserProfile?>? _profileSub;
@@ -215,7 +217,13 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     });
     _profileBootSub = _s.users.watchProfile(widget.uid).listen(
       (profile) {
-        if (profile == null || _engine != null) return;
+        // _bootstrapping, not just _engine: the engine is only published once
+        // init() has finished, and that is seconds of network on a slow link —
+        // long enough for the retry screen to appear and be tapped. The second
+        // profile event then built a second engine on the same call-UI stream,
+        // and whichever lost the accept tore down the room the other had joined.
+        if (profile == null || _engine != null || _bootstrapping) return;
+        _bootstrapping = true;
         _bootTimeout?.cancel();
         _profileBootSub?.cancel();
         _profileBootSub = null;
@@ -235,7 +243,11 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       myPhone: profile.phone,
     );
     engine.addListener(_onEngineChanged);
-    await engine.init();
+    try {
+      await engine.init();
+    } finally {
+      _bootstrapping = false;
+    }
 
     // Show the home screen as soon as the engine is ready — the steps below
     // (permissions, token upload, listeners) must never block sign-in.
@@ -335,7 +347,19 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   /// receiving its calls).
   Future<void> _signOut() async {
     await _s.pushRegistrar.unregister();
+    _forgetSiriContacts();
     await _s.auth.signOut();
+  }
+
+  /// Siri keeps what it was last taught. Without this the previous account's
+  /// people stayed speakable after sign-out — «Позвони …» resolved to a uid the
+  /// next account has never heard of.
+  void _forgetSiriContacts() {
+    try {
+      _s.intents.syncContacts(const []);
+    } catch (e) {
+      log('clearing Siri contacts failed', error: e);
+    }
   }
 
   /// Permanently delete the account (Guideline 5.1.1(v)). Unregister this
@@ -345,6 +369,7 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
   /// show a retry message on failure.
   Future<void> _deleteAccount() async {
     await _s.pushRegistrar.unregister();
+    _forgetSiriContacts();
     await _s.auth.deleteAccount();
   }
 
@@ -362,6 +387,17 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
     if (engine.phase != EnginePhase.idle) {
       _announcedOutcome = CallOutcome.none;
     }
+    // Spoken once per outage, on the way in. The in-call screen shows it too,
+    // but a screen-reader user holding the phone to their ear has no focus
+    // there to be re-read.
+    if (engine.reconnecting && !_announcedReconnecting) {
+      final loc = AppLocalizations.of(context);
+      if (loc != null) {
+        SemanticsService.sendAnnouncement(
+            View.of(context), loc.reconnecting, TextDirection.ltr);
+      }
+    }
+    _announcedReconnecting = engine.reconnecting;
   }
 
   void _announceOutcome(CallOutcome outcome) {
@@ -372,8 +408,11 @@ class _SignedInShellState extends State<SignedInShell> with WidgetsBindingObserv
       CallOutcome.declined => loc.callDeclined(name),
       CallOutcome.noAnswer => loc.callNoAnswer(name),
       CallOutcome.failed => loc.callFailed,
-      CallOutcome.ended => loc.callEnded,
-      CallOutcome.none => null,
+      // A normal hangup says nothing: the end tone already marks it, and a
+      // banner queued while the app was in the background stayed up until the
+      // app was next seen — i.e. over the next call answered from the lock
+      // screen.
+      CallOutcome.ended || CallOutcome.none => null,
     };
     if (text == null) return;
     // Spoken by VoiceOver/TalkBack even with no visual focus change.

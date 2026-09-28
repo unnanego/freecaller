@@ -4,6 +4,23 @@ abstract final class Config {
   /// Mirrored server-side by ringExpiresAt + the stale-call sweep.
   static const ringTimeout = Duration(seconds: 45);
 
+  /// How long a connected call may go without a working media path before it
+  /// is ended as failed. Most outages the SDK can repair (a WiFi→cellular
+  /// handoff, an ICE restart) are over in a few seconds; past this the people
+  /// on the call are better served by an end tone and a redial than by more
+  /// silence.
+  static const mediaRecoveryTimeout = Duration(seconds: 20);
+
+  /// Ceiling on each server write made while ending a call. Ending must not
+  /// wait on the network: a write that cannot land in this long is not going to
+  /// land in time to matter, and the sweep closes the record server-side.
+  static const teardownWriteTimeout = Duration(seconds: 5);
+
+  /// An interruption shorter than this is never shown. The peer leaving the
+  /// room on an ordinary hangup looks like one for the moment it takes the call
+  /// record to catch up.
+  static const mediaInterruptionGrace = Duration(seconds: 2);
+
   /// MethodChannel name for the iOS intents bridge (Siri → Dart).
   static const intentsChannel = 'freecaller/intents';
 

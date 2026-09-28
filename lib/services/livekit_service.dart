@@ -38,6 +38,24 @@ class LiveKitService {
   /// Fires when the room connection drops for any reason.
   Stream<void> get onDisconnected => _disconnected.stream;
 
+  /// True while the call has no working media path: the SDK is resuming or
+  /// rebuilding its connection, or the peer we were talking to has dropped out
+  /// of the room and not come back.
+  ///
+  /// Neither is a disconnect. The SDK keeps retrying on a schedule that runs
+  /// past a minute, and says nothing meanwhile — so a path that died mid-call
+  /// was a silent call with a running timer until somebody hung up. The engine
+  /// bounds that wait; this is what it watches.
+  final interrupted = ValueNotifier<bool>(false);
+  bool _reconnecting = false;
+  bool _peerSeen = false;
+
+  void _updateInterrupted() {
+    final room = _room;
+    interrupted.value = room != null &&
+        (_reconnecting || (_peerSeen && room.remoteParticipants.isEmpty));
+  }
+
   /// Remote participant's camera feed, for the in-call screen.
   final remoteVideo = ValueNotifier<VideoTrack?>(null);
 
@@ -59,6 +77,10 @@ class LiveKitService {
   bool get isConnected => _room?.connectionState == ConnectionState.connected;
   bool get hasPeer => (_room?.remoteParticipants.isNotEmpty) ?? false;
 
+  /// Bumped by every [connect] and [disconnect]. A connect that finds it moved
+  /// while it was awaiting has been overtaken and must not install its room.
+  int _generation = 0;
+
   Future<void> connect(String callId, {required bool video}) async {
     // Never open a second room for the SAME call — a duplicate identity would
     // kick the first. A room left over from a DIFFERENT call is a different
@@ -69,6 +91,13 @@ class LiveKitService {
       log('livekit: closing leftover room $_roomCallId before joining $callId');
       await disconnect();
     }
+    // Connecting takes a second or two, and the call can end inside it: the
+    // user hangs up on «Соединение…», or the caller gives up just as we answer.
+    // The teardown for that runs disconnect(), which finds no room yet — and
+    // then this method used to finish and install one, mic about to be
+    // published, with nobody left to close it until the next call. So note the
+    // generation here and refuse to go on if it moved.
+    final generation = ++_generation;
     // The server checks we are a participant of a call that is still live
     // before it mints anything (pb_hooks/livekit.pb.js).
     final result = await _pb.send<Map<String, dynamic>>(
@@ -76,6 +105,9 @@ class LiveKitService {
       method: 'POST',
       body: {'callId': callId},
     );
+    if (generation != _generation) {
+      throw StateError('livekit connect for $callId overtaken before joining');
+    }
     final data = Map<String, dynamic>.from(result);
     final token = data['token'] as String;
     final url = data['url'] as String;
@@ -120,8 +152,11 @@ class LiveKitService {
         defaultAudioOutputOptions: AudioOutputOptions(speakerOn: speakerOn.value),
       ),
     );
-    _listener = room.createListener()
+    final listener = room.createListener();
+    _listener = listener
       ..on<ParticipantConnectedEvent>((_) {
+        _peerSeen = true;
+        _updateInterrupted();
         _peerJoined.add(null);
         // The peer's audio track is about to arrive and the session gets
         // reconfigured with it; put the route back afterwards.
@@ -139,20 +174,56 @@ class LiveKitService {
       ..on<TrackUnsubscribedEvent>((event) {
         if (event.track == remoteVideo.value) remoteVideo.value = null;
       })
+      // A full reconnect reports every remote participant as gone before it
+      // reports them back, so this and the reconnect events below describe the
+      // same outage as often as not — hence one flag, not two.
+      ..on<ParticipantDisconnectedEvent>((_) => _updateInterrupted())
+      ..on<RoomResumingEvent>((_) {
+        log('livekit resuming (media path or signal lost)');
+        _reconnecting = true;
+        _updateInterrupted();
+      })
+      ..on<RoomReconnectingEvent>((_) {
+        log('livekit full reconnect');
+        _reconnecting = true;
+        _updateInterrupted();
+      })
+      ..on<RoomReconnectedEvent>((_) {
+        log('livekit reconnected');
+        _reconnecting = false;
+        _updateInterrupted();
+      })
       ..on<RoomDisconnectedEvent>((event) {
         log('livekit disconnected: ${event.reason}');
         _disconnected.add(null);
       });
 
-    await room.connect(
-      url,
-      token,
-      connectOptions: iceServers.isEmpty
-          ? const ConnectOptions()
-          : ConnectOptions(
-              rtcConfiguration: RTCConfiguration(iceServers: iceServers),
-            ),
-    );
+    try {
+      await room.connect(
+        url,
+        token,
+        connectOptions: iceServers.isEmpty
+            ? const ConnectOptions()
+            : ConnectOptions(
+                rtcConfiguration: RTCConfiguration(iceServers: iceServers),
+              ),
+      );
+      if (generation != _generation) {
+        throw StateError('livekit connect for $callId overtaken while joining');
+      }
+    } catch (_) {
+      // Failed or overtaken: either way this room is nobody's. Close it here —
+      // disconnect() only knows about a room that was installed.
+      if (identical(_listener, listener)) _listener = null;
+      try {
+        await listener.dispose();
+        await room.disconnect();
+        await room.dispose();
+      } catch (e) {
+        log('livekit: closing abandoned room failed', error: e);
+      }
+      rethrow;
+    }
     _room = room;
     _roomCallId = callId;
     // Connecting brings the audio session up and applies its own routing; the
@@ -162,7 +233,10 @@ class LiveKitService {
     // selected — some OEM builds only expose it a beat later.
     await _applyRoute();
     Future.delayed(const Duration(milliseconds: 800), _reassertRoute);
-    if (room.remoteParticipants.isNotEmpty) _peerJoined.add(null);
+    if (room.remoteParticipants.isNotEmpty) {
+      _peerSeen = true;
+      _peerJoined.add(null);
+    }
   }
 
   /// The value last handed to the SDK, so an unchanged one need not be pushed
@@ -314,10 +388,14 @@ class LiveKitService {
   }
 
   Future<void> disconnect() async {
+    _generation++; // strands any connect() still in flight — see there
     final room = _room;
     _room = null;
     _roomCallId = null;
     _sdkSpeakerPreference = null;
+    _reconnecting = false;
+    _peerSeen = false;
+    interrupted.value = false;
     remoteVideo.value = null;
     localVideo.value = null;
     await _listener?.dispose();

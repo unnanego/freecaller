@@ -10,10 +10,12 @@
 // their address, is simply stuck.
 //
 // That protection is worth very little here and the confusion is expensive.
-// The roster is a private family of about ten people, invite-only, and every
-// member can already list the whole roster once signed in; an attacker learning
-// that some address has an account learns nothing they could act on, since the
-// credential is possession of that mailbox. Whereas the failure mode above is
+// The roster is a private family of about ten people, invite-only; an attacker
+// learning that some address has an account learns nothing they could act on,
+// since the credential is possession of that mailbox. (Signed-in members no
+// longer see the whole roster — 1789900000_scope_users_visibility.js — and the
+// endpoint is rate-limited by configure-ratelimits.sh, which bounds how fast
+// anyone can ask.) Whereas the failure mode above is
 // hit by exactly the people we care about most — an elderly user and whoever is
 // helping them set up the phone.
 //

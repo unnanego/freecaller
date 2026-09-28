@@ -372,7 +372,10 @@ class _EditableFieldState extends State<_EditableField> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.label, style: Mod.meta(color: Mod.neutral700)),
+          // The field below carries this as its semantic label; read once.
+          ExcludeSemantics(
+            child: Text(widget.label, style: Mod.meta(color: Mod.neutral700)),
+          ),
           const SizedBox(height: 5),
           Row(
             children: [
@@ -383,18 +386,23 @@ class _EditableFieldState extends State<_EditableField> {
                     color: Mod.surface,
                     border: Border.all(color: Mod.divider, width: 2),
                   ),
-                  child: TextField(
-                    controller: _controller,
-                    style: Mod.body(color: Mod.text),
-                    keyboardType: widget.keyboardType,
-                    inputFormatters: widget.formatters,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _save(),
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                  // A sibling Text names nothing to a screen reader — the
+                  // field was announced as a bare "text field".
+                  child: Semantics(
+                    label: widget.label,
+                    child: TextField(
+                      controller: _controller,
+                      style: Mod.body(color: Mod.text),
+                      keyboardType: widget.keyboardType,
+                      inputFormatters: widget.formatters,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _save(),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: InputBorder.none,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      ),
                     ),
                   ),
                 ),
@@ -811,24 +819,32 @@ class _EmailChangeSheetState extends State<_EmailChangeSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Mod.meta(color: Mod.neutral700)),
+        // The visible label is a sibling, which means nothing to a screen
+        // reader: the field was announced as a bare "text field". Name the
+        // field itself, and drop the sibling so the name is not read twice.
+        ExcludeSemantics(
+          child: Text(label, style: Mod.meta(color: Mod.neutral700)),
+        ),
         const SizedBox(height: 5),
         Container(
           decoration: BoxDecoration(
             color: Mod.bg,
             border: Border.all(color: Mod.divider, width: 2),
           ),
-          child: TextField(
-            key: fieldKey,
-            controller: controller,
-            keyboardType: type,
-            autofocus: autofocus,
-            inputFormatters: formatters,
-            style: Mod.body(color: Mod.text),
-            decoration: const InputDecoration(
-              isDense: true,
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          child: Semantics(
+            label: label,
+            child: TextField(
+              key: fieldKey,
+              controller: controller,
+              keyboardType: type,
+              autofocus: autofocus,
+              inputFormatters: formatters,
+              style: Mod.body(color: Mod.text),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              ),
             ),
           ),
         ),

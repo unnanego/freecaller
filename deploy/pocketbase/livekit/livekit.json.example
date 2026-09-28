@@ -8,7 +8,11 @@
     "or token minting silently produces tokens the SFU rejects.",
     "",
     "turn.sharedSecret must match `static-auth-secret` in /etc/turnserver.conf.",
-    "Leave turn.url empty to disable the relay (clients then go direct only)."
+    "Leave turn.urls empty to disable the relay (clients then go direct only).",
+    "",
+    "Keep the plain turn: urls next to turns:. libwebrtc checks the turns:",
+    "certificate against its own built-in roots (no Let's Encrypt among them),",
+    "so a certificate it does not trust silently removes that relay."
   ],
 
   "livekit": {
@@ -18,7 +22,11 @@
   },
 
   "turn": {
-    "url": "turns:turn.holographica.space:443",
+    "urls": [
+      "turns:turn.holographica.space:443",
+      "turn:turn.holographica.space:3478?transport=udp",
+      "turn:turn.holographica.space:3478?transport=tcp"
+    ],
     "sharedSecret": "REPLACE_WITH_COTURN_STATIC_AUTH_SECRET"
   }
 }

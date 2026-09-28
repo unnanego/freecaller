@@ -64,10 +64,41 @@ class CallkitIncomingActivity : Activity() {
             )
             return intent
         }
+
+        const val EXTRA_ENDED_CALL_ID = "ENDED_CALL_ID"
+
+        /**
+         * The "this ring is over" broadcast in the form the activity's receiver
+         * can actually get: action + package and NO component. [getIntentEnded]
+         * names the Activity class, and a dynamically registered receiver has
+         * no component to match, so that one is never delivered to anybody.
+         *
+         * It names the call it is about. Without an id, a cancel for ring N
+         * that arrived after ring N+1 had taken over the screen finished the
+         * activity showing N+1 — a live call silently taken off the screen of
+         * someone who cannot see that it happened.
+         */
+        fun getIntentEndedFor(context: Context, callId: String, isAccepted: Boolean): Intent =
+            Intent("${context.packageName}.${ACTION_ENDED_CALL_INCOMING}").apply {
+                setPackage(context.packageName)
+                putExtra("ACCEPTED", isAccepted)
+                putExtra(EXTRA_ENDED_CALL_ID, callId)
+            }
     }
+
+    /** The id of the ring this activity is showing right now. */
+    private fun showingCallId(): String? =
+        intent?.extras?.getBundle(CallkitConstants.EXTRA_CALLKIT_INCOMING_DATA)
+            ?.getString(CallkitConstants.EXTRA_CALLKIT_ID)
 
     inner class EndedCallkitIncomingBroadcastReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            // An end that names a call only ends THAT call's screen. One with
+            // no id keeps the old meaning (whatever is showing).
+            val endedId = intent.getStringExtra(EXTRA_ENDED_CALL_ID)
+            if (!endedId.isNullOrEmpty() && !endedId.equals(showingCallId(), ignoreCase = true)) {
+                return
+            }
             if (!isFinishing) {
                 val isAccepted = intent.getBooleanExtra("ACCEPTED", false)
                 if (isAccepted) {
@@ -121,12 +152,20 @@ class CallkitIncomingActivity : Activity() {
             registerReceiver(
                 endedCallkitIncomingBroadcastReceiver,
                 IntentFilter("${packageName}.${ACTION_ENDED_CALL_INCOMING}"),
-                Context.RECEIVER_EXPORTED,
+                // NOT exported: the only legitimate senders are this package
+                // (same UID, which a non-exported receiver still hears).
+                // Exported, any installed app could dismiss an incoming ring
+                // by broadcasting this action.
+                Context.RECEIVER_NOT_EXPORTED,
             )
         } else {
+            // Before API 33 there is no such flag; requiring the (signature)
+            // call permission of the sender has the same effect.
             registerReceiver(
                 endedCallkitIncomingBroadcastReceiver,
-                IntentFilter("${packageName}.${ACTION_ENDED_CALL_INCOMING}")
+                IntentFilter("${packageName}.${ACTION_ENDED_CALL_INCOMING}"),
+                "${packageName}.PERMISSION_CALL",
+                null,
             )
         }
         FlutterCallkitIncomingPlugin.getInstance()?.getCallkitSoundPlayerManager()?.keepRingingOnFullScreen();

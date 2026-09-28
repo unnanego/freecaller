@@ -81,6 +81,11 @@ class CallEngine extends ChangeNotifier {
   CallOutcome get lastOutcome => _lastOutcome;
   bool get muted => _muted;
 
+  /// A connected call whose media path is down and being repaired — shown and
+  /// announced so silence is not the only sign. See [_onMediaInterrupted].
+  bool get reconnecting => _reconnecting;
+  bool _reconnecting = false;
+
   /// Whether the user has stopped their own camera inside a video call.
   bool get cameraOff => _cameraOff;
 
@@ -128,8 +133,11 @@ class CallEngine extends ChangeNotifier {
   StreamSubscription<CallDoc?>? _docWatch;
   StreamSubscription<void>? _mediaDrop;
   Timer? _ringTimer;
+  Timer? _interruptionShown;
+  Timer? _interruptionFatal;
 
   Future<void> init() async {
+    _livekit.interrupted.addListener(_onMediaInterrupted);
     _uiEvents = _callUi.events.listen(_onUiEvent);
     _mediaDrop = _livekit.onDisconnected.listen((_) {
       log('engine: livekit onDisconnected (phase=$_phase)');
@@ -150,6 +158,13 @@ class CallEngine extends ChangeNotifier {
             continue;
           }
           if (doc.state == CallState.accepted) {
+            if (!active.accepted) {
+              // Accepted — by another of this user's devices; this one only
+              // still shows the ring. Joining would enter the room under the
+              // same identity and kick the device that actually answered.
+              await _callUi.end(active.callId, EndReason.remote);
+              continue;
+            }
             _adoptIncoming(doc);
             await _join(doc.callId);
           } else if (doc.state == CallState.ringing && doc.calleeId == _myUid) {
@@ -169,9 +184,20 @@ class CallEngine extends ChangeNotifier {
           }
         } catch (e) {
           log('cold-start active call ${active.callId} failed', error: e);
-          try {
-            await _callUi.end(active.callId, EndReason.failed);
-          } catch (_) {}
+          if (_session?.callId == active.callId) {
+            // _join had already put the engine `inCall` when it failed. Ending
+            // only the native call left that standing: a call screen with a
+            // running timer and no room — and with no room there is nothing for
+            // the media-recovery timeout to notice, on either side.
+            await _teardown(CallOutcome.failed,
+                writeState: _phase == EnginePhase.inCall
+                    ? CallState.ended
+                    : null);
+          } else {
+            try {
+              await _callUi.end(active.callId, EndReason.failed);
+            } catch (_) {}
+          }
         }
       }
     } catch (e) {
@@ -237,6 +263,42 @@ class CallEngine extends ChangeNotifier {
     }
   }
 
+  /// Whether [callId] is still the call this engine is running.
+  ///
+  /// Every step of placing or answering a call is an await, and the call can end
+  /// inside any of them — a hangup on «Соединение…», a native `ended`, the peer
+  /// giving up. The teardown for that runs to completion while the method that
+  /// started the call is still suspended; when it resumes it used to carry on
+  /// as if nothing had happened: publish the mic, loop the ringback in phase
+  /// idle with nothing left to stop it, arm a ring timer for a dead call. So
+  /// each of those methods asks this after every await. A teardown still in
+  /// flight counts as gone — the session is only cleared at its very end.
+  bool _owns(String callId) =>
+      _session?.callId == callId && _tearingDown == null;
+
+  /// Finish off a call that ended while [startCall] was still getting it going.
+  /// The teardown that ended it could only undo what existed at that moment;
+  /// this undoes what was created after.
+  Future<void> _abandonStart(String callId, {required bool docCreated}) async {
+    log('startCall $callId: call ended while it was being placed');
+    if (docCreated) {
+      // The teardown's own `cancelled` write may have raced the create and
+      // 404ed, which would leave the callee ringing to the sweep. A second one
+      // is at worst a rejected write.
+      try {
+        await _calls
+            .setState(callId, CallState.cancelled)
+            .timeout(Config.teardownWriteTimeout);
+      } catch (e) {
+        log('startCall $callId: late cancel not written', error: e);
+      }
+    }
+    await _sounds.stopRingback();
+    try {
+      await _callUi.end(callId, EndReason.local);
+    } catch (_) {}
+  }
+
   // ---------------------------------------------------------------- outgoing
 
   Future<void> startCall(Contact contact, {required bool video}) async {
@@ -269,6 +331,7 @@ class CallEngine extends ChangeNotifier {
         peerPhone: contact.phone,
         isVideo: video,
       ));
+      if (!_owns(callId)) return _abandonStart(callId, docCreated: false);
       await _calls.createRinging(
         callId: callId,
         callerId: _myUid,
@@ -277,12 +340,19 @@ class CallEngine extends ChangeNotifier {
         callerPhone: _myPhone,
         isVideo: video,
       );
+      if (!_owns(callId)) return _abandonStart(callId, docCreated: true);
       // Join the room immediately: the caller waits alone so audio is
       // instant the moment the callee accepts.
       await _livekit.connect(callId, video: video);
+      if (!_owns(callId)) return _abandonStart(callId, docCreated: true);
       await _enableMediaWhenReady();
+      if (!_owns(callId)) return _abandonStart(callId, docCreated: true);
     } catch (e) {
       log('startCall failed', error: e);
+      // A connect overtaken by a teardown throws too (LiveKitService.connect);
+      // that call is already over, and tearing down again here would hit
+      // whatever call came next.
+      if (!_owns(callId)) return _abandonStart(callId, docCreated: true);
       // `cancelled`, not `ended`: the doc is still `ringing` at this point and
       // the server only allows ringing -> accepted|declined|cancelled|missed
       // (pb_hooks/calls.pb.js). Writing `ended` here came back 400, which left
@@ -299,6 +369,7 @@ class CallEngine extends ChangeNotifier {
     // own player, not the room, so it needs the route applied to it separately
     // — and a beat later, once the native session has settled.
     await _sounds.startRingback();
+    if (!_owns(callId)) return _abandonStart(callId, docCreated: true);
     if (_livekit.speakerOn.value) {
       Future.delayed(const Duration(milliseconds: 500), () {
         if (_phase == EnginePhase.dialing && _livekit.speakerOn.value) {
@@ -420,19 +491,56 @@ class CallEngine extends ChangeNotifier {
       }
       if (_session?.callId != callId) {
         final doc = await _calls.getCall(callId);
-        if (doc == null || doc.calleeId != _myUid) return;
+        if (doc == null || doc.calleeId != _myUid) {
+          await _endUnadoptedNativeCall(callId);
+          return;
+        }
         _adoptIncoming(doc);
       }
-      await _calls.setState(callId, CallState.accepted);
+      await _calls.accept(callId);
       accepted = true;
+      if (!_owns(callId)) {
+        // Torn down while the accept was on the wire — and the teardown, seeing
+        // phase `incoming`, wrote `declined`, which the server refused because
+        // our accept had landed first. Nobody else will close this call: the
+        // callee-side recovery in _teardown stands down on purpose. We know
+        // this accept was ours, so close it.
+        log('accept $callId: call ended while accepting');
+        try {
+          await _calls
+              .setState(callId, CallState.ended, endedBy: _myUid)
+              .timeout(Config.teardownWriteTimeout);
+        } catch (e) {
+          log('accept $callId: late end not written', error: e);
+        }
+        return;
+      }
       await _join(callId);
     } catch (e) {
       log('accept failed', error: e);
-      await _teardown(CallOutcome.failed,
-          writeState: accepted ? CallState.ended : CallState.declined);
+      if (_owns(callId)) {
+        await _teardown(CallOutcome.failed,
+            writeState: accepted ? CallState.ended : CallState.declined);
+      } else {
+        // No session was ever adopted for this call (the lookup failed), or a
+        // teardown beat us to it. _teardown ends the native call of the SESSION
+        // and there is none — so the ring the user just answered stayed up as a
+        // connected call with no media behind it, in silence.
+        await _endUnadoptedNativeCall(callId);
+      }
     } finally {
       _accepting = false;
     }
+  }
+
+  /// End a native call the engine holds no session for.
+  Future<void> _endUnadoptedNativeCall(String callId) async {
+    try {
+      await _callUi.end(callId, EndReason.failed);
+    } catch (e) {
+      log('ending unadopted native call $callId failed', error: e);
+    }
+    await _clearStaleNativeCalls(_session?.callId ?? '');
   }
 
   Future<void> _join(String callId) async {
@@ -445,7 +553,9 @@ class CallEngine extends ChangeNotifier {
     // route, and this one is about to need it.
     await _clearStaleNativeCalls(callId);
     await _livekit.connect(callId, video: _session?.isVideo ?? false);
+    if (!_owns(callId)) return;
     await _enableMediaWhenReady();
+    if (!_owns(callId)) return;
     await _callUi.reportConnected(callId);
   }
 
@@ -496,6 +606,13 @@ class CallEngine extends ChangeNotifier {
           hangUp();
         } else if (callId != null) {
           _decline(callId);
+        }
+      case CallUiEventType.remoteEnded:
+        // The caller cancelled and the native ring is already gone. Nothing to
+        // write — `cancelled` is theirs and already on the record — and nothing
+        // to do at all for a ring the engine never adopted.
+        if (_phase == EnginePhase.incoming && callId == _session?.callId) {
+          _teardown(CallOutcome.none);
         }
       case CallUiEventType.timeout:
         // Incoming ring timed out natively; the caller (or the sweep)
@@ -596,7 +713,20 @@ class CallEngine extends ChangeNotifier {
             _ringTimer?.cancel();
             await _sounds.stopRingback();
             await _callUi.reportConnected(callId);
+            // A hangup can land inside those two awaits; entering `inCall` after
+            // it left a call screen with no session behind it.
+            if (_phase != EnginePhase.dialing || !_owns(callId)) break;
             _setPhase(EnginePhase.inCall);
+            // The flag is ignored while dialing; pick up an outage that began
+            // there now that it counts.
+            _onMediaInterrupted();
+          } else if (_phase == EnginePhase.incoming && !_accepting) {
+            // Accepted, and not by this device: the server rings every device
+            // the callee owns, and another one of them answered. Only the
+            // caller's cancel and the timeout are pushed, so this ring would
+            // otherwise stay up — and block startCall — until that call ends.
+            // Nothing to write; the call is live and theirs.
+            await _teardown(CallOutcome.none);
           }
         case CallState.declined:
           if (_phase == EnginePhase.dialing) {
@@ -624,11 +754,75 @@ class CallEngine extends ChangeNotifier {
     });
   }
 
+  /// The media path of a connected call went down, or came back.
+  ///
+  /// The SDK repairs what it can on its own, but on a schedule that runs past a
+  /// minute and in complete silence: both people heard nothing, saw a timer
+  /// still counting, and eventually hung up and redialled. Bound it — say so
+  /// after a moment, and past [Config.mediaRecoveryTimeout] end the call as
+  /// failed, which plays the end tone and announces it.
+  ///
+  /// `ended` is written because the call WAS connected; the peer's own watch
+  /// then closes their side at once instead of after their own timeout.
+  void _onMediaInterrupted() {
+    final down = _livekit.interrupted.value && _phase == EnginePhase.inCall;
+    if (!down) {
+      _clearInterruption();
+      return;
+    }
+    if (_interruptionFatal != null) return;
+    log('engine: media interrupted');
+    _interruptionShown = Timer(Config.mediaInterruptionGrace, () {
+      _reconnecting = true;
+      notifyListeners();
+    });
+    _interruptionFatal = Timer(Config.mediaRecoveryTimeout, () async {
+      if (_phase != EnginePhase.inCall || !_livekit.interrupted.value) return;
+      log('engine: media did not recover, ending call');
+      await _teardown(CallOutcome.failed, writeState: CallState.ended);
+    });
+  }
+
+  void _clearInterruption() {
+    _interruptionShown?.cancel();
+    _interruptionShown = null;
+    _interruptionFatal?.cancel();
+    _interruptionFatal = null;
+    if (_reconnecting) {
+      _reconnecting = false;
+      notifyListeners();
+    }
+  }
+
   /// Single exit path. [writeState] is set when THIS side owns the
   /// transition; omitted when reacting to the other side (doc already
   /// terminal). [endNativeCall] is cleared only when retiring a session the
   /// native layer has already moved past — see [_accept].
+  ///
+  /// One at a time. Everything below is an await, several callers can ask for
+  /// the same call to end within a moment of each other (a double tap on hang
+  /// up, the doc going `ended` while our own write is on the wire, the media
+  /// timeout), and the tail of this method is global: it disconnects whatever
+  /// room is up and returns the engine to idle. A second run overlapping the
+  /// first doubled the writes and the end tone; a first run that finished LATE —
+  /// after the peer had redialled and been answered — took the new call down
+  /// with it. Later callers get the run already in flight.
   Future<void> _teardown(
+    CallOutcome outcome, {
+    CallState? writeState,
+    bool endNativeCall = true,
+  }) {
+    final inFlight = _tearingDown;
+    if (inFlight != null) return inFlight;
+    final run = _runTeardown(outcome,
+        writeState: writeState, endNativeCall: endNativeCall);
+    _tearingDown = run;
+    return run.whenComplete(() => _tearingDown = null);
+  }
+
+  Future<void>? _tearingDown;
+
+  Future<void> _runTeardown(
     CallOutcome outcome, {
     CallState? writeState,
     bool endNativeCall = true,
@@ -638,14 +832,24 @@ class CallEngine extends ChangeNotifier {
     final wasConnected = _phase == EnginePhase.inCall;
     _ringTimer?.cancel();
     _ringTimer = null;
+    _interruptionShown?.cancel();
+    _interruptionShown = null;
+    _interruptionFatal?.cancel();
+    _interruptionFatal = null;
+    _reconnecting = false;
     _docWatch?.cancel();
     _docWatch = null;
     await _sounds.stopRingback();
 
     if (session != null && writeState != null) {
       try {
-        await _calls.setState(session.callId, writeState,
-            endedBy: writeState == CallState.ended ? _myUid : null);
+        // Bounded: on a network that drops packets instead of refusing them the
+        // request hangs until the OS gives up on the socket, and everything the
+        // user can perceive — the call screen closing, the end tone — is below.
+        await _calls
+            .setState(session.callId, writeState,
+                endedBy: writeState == CallState.ended ? _myUid : null)
+            .timeout(Config.teardownWriteTimeout);
       } catch (e) {
         // The state this side owns can be stale by the time it is written: in
         // glare the peer may have accepted our outgoing call in the gap between
@@ -654,19 +858,23 @@ class CallEngine extends ChangeNotifier {
         // with nobody in the room — nothing sweeps that, so the peer sat alone
         // until they hung up. Re-read and close it with the legal transition.
         //
-        // Only for `cancelled`, i.e. only when this side was the CALLER. The
-        // peer is the only one who can accept our outgoing call, so an
-        // `accepted` doc there really is ours to close. When this side was the
-        // callee (`declined`), an `accepted` doc means another of this user's
-        // devices took the ring — the server wakes every one of them — and
-        // writing `ended` here would hang up the call they just answered.
+        // Only when this side was the CALLER — `cancelled` on a hangup or glare,
+        // `missed` when the callee answers right at the ring timeout. The peer
+        // is the only one who can accept our outgoing call, so an `accepted`
+        // doc there really is ours to close. When this side was the callee
+        // (`declined`), an `accepted` doc means another of this user's devices
+        // took the ring — the server wakes every one of them — and writing
+        // `ended` here would hang up the call they just answered.
         log('teardown state write failed', error: e);
-        if (writeState == CallState.cancelled) {
+        if (session.outgoing) {
           try {
-            final doc = await _calls.getCall(session.callId);
+            final doc = await _calls
+                .getCall(session.callId)
+                .timeout(Config.teardownWriteTimeout);
             if (doc?.state == CallState.accepted) {
-              await _calls.setState(session.callId, CallState.ended,
-                  endedBy: _myUid);
+              await _calls
+                  .setState(session.callId, CallState.ended, endedBy: _myUid)
+                  .timeout(Config.teardownWriteTimeout);
             }
           } catch (e2) {
             log('teardown state recovery failed', error: e2);
@@ -724,12 +932,32 @@ class CallEngine extends ChangeNotifier {
 
   String _newCallId() => const Uuid().v4();
 
+  bool _disposed = false;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   @override
   void dispose() {
+    // The shell goes away with a call still up when the session is revoked
+    // mid-call (refreshSession runs on every resume). LiveKitService and the
+    // native call UI outlive this object, so walking away left the room open,
+    // the mic live and the peer waiting. Best-effort: the write may well be
+    // refused with the session gone, but the media and the native call end.
+    if (_phase != EnginePhase.idle) {
+      unawaited(_teardown(CallOutcome.none,
+          writeState: _ownedTerminalState(_phase)));
+    }
+    _disposed = true;
     _uiEvents?.cancel();
     _docWatch?.cancel();
     _mediaDrop?.cancel();
     _ringTimer?.cancel();
+    _interruptionShown?.cancel();
+    _interruptionFatal?.cancel();
+    _livekit.interrupted.removeListener(_onMediaInterrupted);
     _sounds.dispose();
     _locks.release();
     super.dispose();

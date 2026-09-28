@@ -94,16 +94,34 @@ def turn_credentials(cfg: dict, ttl: int):
     Returns None when TURN is not configured.
     """
     turn = cfg.get("turn") or {}
-    url = (turn.get("url") or "").strip()
+    # `urls` (a list) supersedes the older single `url`. More than one matters:
+    # libwebrtc verifies a `turns:` certificate against its OWN compiled-in root
+    # list, not the OS trust store, and that list has no Let's Encrypt root — a
+    # `turns:` url behind such a certificate fails its handshake silently and
+    # yields no relay candidate at all. Plain `turn:` urls carry no TLS and so
+    # keep a relay available whatever certificate the TLS listener serves.
+    urls = turn.get("urls") or [turn.get("url") or ""]
+    # A bare string is the natural thing to type for one relay, and iterating it
+    # yields one "url" PER CHARACTER — ("t", "u", "r", "n", ...) — which the
+    # client accepts as a list and then finds no relay in. Wrap it; anything
+    # that is neither a string nor a list is a config mistake, not a relay —
+    # and is treated as "no relay" rather than raised, because a call with
+    # direct media only beats no room token at all. --selftest is where that
+    # mistake gets reported (see below).
+    if isinstance(urls, str):
+        urls = [urls]
+    if not isinstance(urls, (list, tuple)):
+        urls = []
+    urls = [str(u).strip() for u in urls if str(u).strip()]
     secret = turn.get("sharedSecret") or ""
-    if not url or not secret:
+    if not urls or not secret:
         return None
 
     username = str(int(time.time()) + ttl)
     credential = base64.b64encode(
         hmac.new(secret.encode(), username.encode(), hashlib.sha1).digest()
     ).decode()
-    return {"urls": [url], "username": username, "credential": credential}
+    return {"urls": urls, "username": username, "credential": credential}
 
 
 def build(cfg: dict, job: dict) -> dict:
@@ -135,8 +153,27 @@ def selftest(cfg: dict) -> int:
         print("  sub/room     : {} / {}".format(claims["sub"], claims["video"]["room"]))
         print("  ttl          : {}s".format(claims["exp"] - claims["nbf"]))
         print("LiveKit url    : {}".format(out["url"]))
+        configured = (cfg.get("turn") or {}).get("urls")
+        if configured is not None and not isinstance(configured, (str, list)):
+            raise ValueError(
+                "turn.urls must be a list of turn:/turns: urls, not {}".format(
+                    type(configured).__name__))
         if "iceServers" in out:
-            print("TURN relay     : OK {}".format(out["iceServers"][0]["urls"][0]))
+            # "It produced a list" is not "it produced relays": a typo'd scheme
+            # (or the per-character list a bare string used to become) mints
+            # happily and relays nothing, and the people it fails for are the
+            # ones who cannot call without a relay. So look at what is in it.
+            bad = [
+                u for u in out["iceServers"][0]["urls"]
+                if not u.startswith(("turn:", "turns:"))
+            ]
+            if bad:
+                raise ValueError(
+                    "turn.urls entries must start with turn: or turns: — got "
+                    + ", ".join(repr(u) for u in bad[:5])
+                )
+            print("TURN relay     : OK {}".format(
+                ", ".join(out["iceServers"][0]["urls"])))
             print("  username     : {} (expiry timestamp)".format(
                 out["iceServers"][0]["username"]))
         else:

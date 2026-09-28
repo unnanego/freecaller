@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.telecom.TelecomManager
 import android.util.Log
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
 class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
@@ -111,6 +112,40 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
     // Get notification manager dynamically to handle plugin lifecycle properly
     private fun getCallkitNotificationManager(): CallkitNotificationManager? {
         return FlutterCallkitIncomingPlugin.getInstance()?.getCallkitNotificationManager()
+    }
+
+    /**
+     * Take an incoming ring off the phone, with or without a plugin instance.
+     *
+     * The notification manager belongs to the plugin instance, and that exists
+     * only once a Flutter engine has attached. An end that arrives in a process
+     * with no engine — the ring's process died, the cancel push started a fresh
+     * one, and the app's messaging service handles cancels natively — used to
+     * do nothing here (`getCallkitNotificationManager()?.`…), and the
+     * notification outlives the process that posted it: a dead "incoming call"
+     * stayed up, with an Answer button that led nowhere. So without an instance
+     * the same two things are done by hand — cancel the notification (same id
+     * derivation as CallkitNotificationManager) and tell the full-screen
+     * activity, by call id, to go away. There is no ringtone to stop in that
+     * case: the player lived in the process that died.
+     */
+    private fun clearIncoming(context: Context, data: Bundle) {
+        val manager = getCallkitNotificationManager()
+        if (manager != null) {
+            manager.clearIncomingNotification(data, false)
+            return
+        }
+        val callId = data.getString(CallkitConstants.EXTRA_CALLKIT_ID, "callkit_incoming")
+        try {
+            NotificationManagerCompat.from(context).cancel(callId.hashCode())
+        } catch (e: Exception) {
+            Log.w(TAG, "cancel notification without plugin failed: ${e.message}")
+        }
+        try {
+            context.sendBroadcast(CallkitIncomingActivity.getIntentEndedFor(context, callId, false))
+        } catch (e: Exception) {
+            Log.w(TAG, "ended broadcast without plugin failed: ${e.message}")
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -284,7 +319,7 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
                     driveTelecomConnection(context, data, CallkitConstants.ACTION_CALL_DECLINE)
                     FlutterCallkitIncomingPlugin.notifyEventCallbacks(CallkitEventCallback.CallEvent.DECLINE, data)
                     // clear notification
-                    getCallkitNotificationManager()?.clearIncomingNotification(data, false)
+                    clearIncoming(context, data)
                     sendEventFlutter(CallkitConstants.ACTION_CALL_DECLINE, data)
                     removeCall(context, Data.fromBundle(data))
                 } catch (error: Exception) {
@@ -297,7 +332,7 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
                     driveTelecomConnection(context, data, CallkitConstants.ACTION_CALL_ENDED)
                     FlutterCallkitIncomingPlugin.notifyEventCallbacks(CallkitEventCallback.CallEvent.END, data)
                     // clear notification and stop service
-                    getCallkitNotificationManager()?.clearIncomingNotification(data, false)
+                    clearIncoming(context, data)
                     CallkitNotificationService.stopService(context)
                     sendEventFlutter(CallkitConstants.ACTION_CALL_ENDED, data)
                     removeCall(context, Data.fromBundle(data))
@@ -311,7 +346,7 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
                     driveTelecomConnection(context, data, CallkitConstants.ACTION_CALL_TIMEOUT)
                     // clear notification and show miss notification
                     val notificationManager = getCallkitNotificationManager()
-                    notificationManager?.clearIncomingNotification(data, false)
+                    clearIncoming(context, data)
                     notificationManager?.showMissCallNotification(data)
                     sendEventFlutter(CallkitConstants.ACTION_CALL_TIMEOUT, data)
                     removeCall(context, Data.fromBundle(data))

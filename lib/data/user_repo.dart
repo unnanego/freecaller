@@ -241,6 +241,19 @@ class UserRepo {
         } catch (_) {
           // Realtime unavailable: the timer below still converges.
         }
+        // The listener can cancel while the subscribe above is in flight.
+        // onCancel then ran with `unsub` still null and no timer to stop, so
+        // nothing would ever release what this function is about to keep: the
+        // subscription would stay open and the timer would poll for the life
+        // of the process. Undo it here instead.
+        if (closed) {
+          try {
+            await unsub?.call();
+          } catch (_) {
+            // Best-effort: the connection may already be gone.
+          }
+          return;
+        }
         reconcileTimer =
             Timer.periodic(Config.profileReconcileInterval, (_) => read());
       },

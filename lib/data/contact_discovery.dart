@@ -388,11 +388,34 @@ class ContactDiscoveryRepo {
     return _writes;
   }
 
+  /// The most numbers sent in one match request.
+  ///
+  /// The route reads the first 2000 entries of `phones` and ignores the rest
+  /// without saying so, so one request for a large address book quietly never
+  /// asked about everyone past that point — they just showed as "not on the
+  /// app". Kept well under the server's cap rather than equal to it, so the two
+  /// numbers can drift a little without the silent truncation coming back.
+  static const _matchChunkSize = 1000;
+
   /// Ask the backend which numbers belong to registered users → {e164: match}.
   ///
-  /// Throws [ContactMatchException] if the request failed, rather than reporting
-  /// an empty roster — see that class for why.
+  /// Asked in chunks of [_matchChunkSize] and merged. One after another rather
+  /// than in parallel: each request makes the server scan the roster, and a
+  /// family address book is one or two chunks anyway.
+  ///
+  /// Throws [ContactMatchException] if any request failed, rather than reporting
+  /// an empty — or here, a partial — roster; see that class for why.
   Future<Map<String, _Match>> _matchRegistered(List<String> phones) async {
+    final merged = <String, _Match>{};
+    for (var i = 0; i < phones.length; i += _matchChunkSize) {
+      final end =
+          i + _matchChunkSize < phones.length ? i + _matchChunkSize : phones.length;
+      merged.addAll(await _matchChunk(phones.sublist(i, end)));
+    }
+    return merged;
+  }
+
+  Future<Map<String, _Match>> _matchChunk(List<String> phones) async {
     try {
       final result = await _pb.send<Map<String, dynamic>>(
         Config.pbMatchContactsPath,
@@ -420,21 +443,86 @@ class ContactDiscoveryRepo {
     }
   }
 
-  /// Parse to E.164. A leading "+" carries its own country code, so parse it
-  /// as-is; only bare national numbers (no "+") default to RU. Passing
-  /// destinationCountry with a "+" number makes phone_numbers_parser IGNORE the
-  /// "+" and force RU — mangling e.g. +972… into +772… — which silently dropped
-  /// every non-Russian contact.
-  String? _toE164(String raw) {
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty) return null;
+  /// The signed-in user's own number, which tells [toE164] what country a bare
+  /// national number in *their* address book most likely belongs to. Null when
+  /// signed out or when the auth record carries no phone.
+  String? get _ownPhone {
     try {
-      final parsed = trimmed.startsWith('+')
-          ? PhoneNumber.parse(trimmed)
-          : PhoneNumber.parse(trimmed, destinationCountry: IsoCode.RU);
-      return parsed.isValid() ? parsed.international : null;
+      final phone = _pb.authStore.record?.get<String>('phone', '') ?? '';
+      return phone.isEmpty ? null : phone;
     } catch (_) {
       return null;
     }
+  }
+
+  String? _toE164(String raw) => toE164(raw, ownE164: _ownPhone);
+}
+
+/// Parse an address-book number to E.164, or null if it is not a phone number
+/// under any reading tried here.
+///
+/// A leading "+" carries its own country code, so it is parsed as-is. Passing
+/// destinationCountry with a "+" number makes phone_numbers_parser IGNORE the
+/// "+" and force RU — mangling e.g. +972… into +772… — which silently dropped
+/// every non-Russian contact.
+///
+/// Everything without a "+" used to be read as a Russian national number and
+/// nothing else, which dropped — just as silently — the other ways a foreign
+/// number gets typed into a phone. In order:
+///
+///  1. An international dialling prefix instead of "+": `00` (most of the
+///     world) or `8 10` (Russia's own). `810` cannot swallow a real Russian
+///     number: after the trunk `8` comes an area or mobile code, mobiles are
+///     `9xx`, and no area code starts with `10`. The rewrite is only kept if the
+///     result is a valid number, so a foreign national number that merely
+///     happens to start with those digits (US area code 810) falls through.
+///  2. A Russian national number, as before.
+///  3. A national number of the country [ownE164] belongs to. Family abroad save
+///     each other's numbers the local way, and their own number is the best
+///     hint there is for what "local" means on their phone.
+@visibleForTesting
+String? toE164(String raw, {String? ownE164}) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return null;
+  if (trimmed.startsWith('+')) return _validE164(trimmed);
+
+  final digits = trimmed.replaceAll(RegExp(r'\D'), '');
+  for (final prefix in const ['00', '810']) {
+    // Seven more digits is shorter than any real country code + number, and
+    // long enough that a short national number is left alone.
+    if (digits.startsWith(prefix) && digits.length >= prefix.length + 7) {
+      final rewritten = _validE164('+${digits.substring(prefix.length)}');
+      if (rewritten != null) return rewritten;
+    }
+  }
+
+  final russian = _validE164(trimmed, region: IsoCode.RU);
+  if (russian != null) return russian;
+
+  final home = _regionOf(ownE164);
+  if (home == null || home == IsoCode.RU) return null;
+  return _validE164(trimmed, region: home);
+}
+
+String? _validE164(String number, {IsoCode? region}) {
+  try {
+    final parsed = region == null
+        ? PhoneNumber.parse(number)
+        : PhoneNumber.parse(number, destinationCountry: region);
+    return parsed.isValid() ? parsed.international : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+IsoCode? _regionOf(String? e164) {
+  if (e164 == null || !e164.trim().startsWith('+')) return null;
+  try {
+    // Not checked with isValid(): only the country is wanted, and the parser's
+    // idea of which number ranges exist lags the real world — a number people
+    // actually sign in with is evidence enough of where it is from.
+    return PhoneNumber.parse(e164.trim()).isoCode;
+  } catch (_) {
+    return null;
   }
 }

@@ -51,6 +51,22 @@ routerAdd(
       return e.json(409, { message: "Call is " + state })
     }
 
+    // …and `state` alone is only as good as whoever last wrote it. A record
+    // can read `ringing` or `accepted` long after both phones have gone — the
+    // sweep in calls.pb.js closes those, but on a one-minute cron, and until it
+    // does this endpoint would mint a fresh hour-long room token for a call
+    // that ended yesterday. Same two limits as the sweep, measured on the
+    // server's own `created` stamp. An unparseable date skips the check rather
+    // than refusing a live call.
+    const createdMs = Date.parse(call.getString("created").replace(" ", "T"))
+    if (!isNaN(createdMs)) {
+      const ageMs = Date.now() - createdMs
+      const limitMs = state === "ringing" ? 2 * 60 * 1000 : 6 * 60 * 60 * 1000
+      if (ageMs > limitMs) {
+        return e.json(409, { message: "Call is stale" })
+      }
+    }
+
     // Per-participant job file: two participants mint concurrently for the same
     // call, so the path must not collide.
     const jobPath =
