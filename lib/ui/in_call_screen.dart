@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -54,6 +55,10 @@ class InCallScreen extends StatefulWidget {
 
 class _InCallScreenState extends State<InCallScreen> {
   bool _localFullscreen = false;
+  // Where the floating self-view rests, and where it is while a finger drags
+  // it (null when not dragging). It snaps to a corner on release.
+  Alignment _selfCorner = Alignment.bottomRight;
+  Offset? _selfDrag;
   Timer? _timer;
   StreamSubscription<int>? _proximitySub;
   bool _proximityOn = false; // what has been applied
@@ -441,22 +446,67 @@ class _InCallScreenState extends State<InCallScreen> {
               ),
             ),
           ),
-          // Floating rounded self-view — always visible, tap to swap. It rides
-          // above the control tray when the chrome is showing and drops toward
-          // the corner once it fades, like the native call apps.
+          // Floating rounded self-view — always visible, tap to swap, drag to
+          // move. It rests in a corner, keeping clear of the name and the
+          // control tray while the chrome is showing and moving into the freed
+          // space once it fades, like the native call apps.
           SafeArea(
-            child: Align(
-              alignment: Alignment.bottomRight,
-              child: AnimatedPadding(
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOut,
-                padding: EdgeInsets.only(
-                    right: Mod.s4, bottom: _controlsVisible ? 240 : Mod.s4),
-                child: _selfView(loc),
+            child: LayoutBuilder(
+              builder: (context, box) => Stack(
+                children: [_floatingSelfView(loc, box.biggest)],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  static const _selfSize = Size(104, 150);
+
+  /// Top-left position of the self-view resting in [corner] of [area].
+  Offset _selfCornerOffset(Alignment corner, Size area) {
+    const inset = Mod.s4;
+    final top = _controlsVisible ? 96.0 : inset; // under the name/timer row
+    final bottom = _controlsVisible ? 240.0 : inset; // above the control tray
+    return Offset(
+      corner.x < 0 ? inset : area.width - _selfSize.width - inset,
+      corner.y < 0 ? top : area.height - _selfSize.height - bottom,
+    );
+  }
+
+  Widget _floatingSelfView(AppLocalizations loc, Size area) {
+    final dragging = _selfDrag != null;
+    final pos = _selfDrag ?? _selfCornerOffset(_selfCorner, area);
+    Offset clamp(Offset o) => Offset(
+          o.dx.clamp(0, math.max(0, area.width - _selfSize.width)).toDouble(),
+          o.dy.clamp(0, math.max(0, area.height - _selfSize.height)).toDouble(),
+        );
+    return AnimatedPositioned(
+      // Follow the finger exactly; glide only when settling into a corner or
+      // making room for the chrome.
+      duration: dragging ? Duration.zero : const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      left: pos.dx,
+      top: pos.dy,
+      child: GestureDetector(
+        onPanStart: (_) => setState(() => _selfDrag = pos),
+        onPanUpdate: (d) => setState(() => _selfDrag = clamp(_selfDrag! + d.delta)),
+        onPanEnd: (d) {
+          // Where a flick is heading, not just where the finger let go, picks
+          // the corner: a short fast throw should land where it was thrown.
+          final end = _selfDrag! + d.velocity.pixelsPerSecond * 0.15;
+          final centre = end + _selfSize.center(Offset.zero);
+          setState(() {
+            _selfCorner = Alignment(
+              centre.dx < area.width / 2 ? -1 : 1,
+              centre.dy < area.height / 2 ? -1 : 1,
+            );
+            _selfDrag = null;
+          });
+        },
+        onPanCancel: () => setState(() => _selfDrag = null),
+        child: _selfView(loc),
       ),
     );
   }

@@ -365,11 +365,26 @@ class CallEngine extends ChangeNotifier {
       return;
     }
 
+    _ringTimer = Timer(Config.ringTimeout, () async {
+      if (_phase == EnginePhase.dialing) {
+        await _teardown(CallOutcome.noAnswer, writeState: CallState.missed);
+      }
+    });
+
+    // Watch for the answer BEFORE the ringback, and never behind it. The tone
+    // is a plugin call into an audio session CallKit owns, and it used to be
+    // awaited first: a tone that never came back meant the answer was never
+    // looked for, and the caller sat on «Соединение…» through a call the
+    // server shows connected with audio both ways (2026-10-04, iPhone).
+    _watchDoc(callId);
+
     // Ringback while we wait for the callee to pick up. It plays through its
     // own player, not the room, so it needs the route applied to it separately
-    // — and a beat later, once the native session has settled.
-    await _sounds.startRingback();
-    if (!_owns(callId)) return _abandonStart(callId, docCreated: true);
+    // — and a beat later, once the native session has settled. Skipped if the
+    // answer already came in: stopRingback has run by then, and starting the
+    // loop after it would play the tone over the call.
+    if (_phase != EnginePhase.dialing || !_owns(callId)) return;
+    unawaited(_sounds.startRingback());
     if (_livekit.speakerOn.value) {
       Future.delayed(const Duration(milliseconds: 500), () {
         if (_phase == EnginePhase.dialing && _livekit.speakerOn.value) {
@@ -377,14 +392,6 @@ class CallEngine extends ChangeNotifier {
         }
       });
     }
-
-    _ringTimer = Timer(Config.ringTimeout, () async {
-      if (_phase == EnginePhase.dialing) {
-        await _teardown(CallOutcome.noAnswer, writeState: CallState.missed);
-      }
-    });
-
-    _watchDoc(callId);
   }
 
   // ---------------------------------------------------------------- incoming
@@ -711,15 +718,17 @@ class CallEngine extends ChangeNotifier {
         case CallState.accepted:
           if (_phase == EnginePhase.dialing) {
             _ringTimer?.cancel();
-            await _sounds.stopRingback();
-            await _callUi.reportConnected(callId);
-            // A hangup can land inside those two awaits; entering `inCall` after
-            // it left a call screen with no session behind it.
-            if (_phase != EnginePhase.dialing || !_owns(callId)) break;
+            // Into the call first, with nothing awaited before it. Stopping the
+            // tone and telling CallKit are housekeeping on the native audio
+            // side, and either one stalling used to hold the screen on
+            // «Соединение…» for a call that was already live.
             _setPhase(EnginePhase.inCall);
             // The flag is ignored while dialing; pick up an outage that began
             // there now that it counts.
             _onMediaInterrupted();
+            unawaited(_sounds.stopRingback());
+            unawaited(_callUi.reportConnected(callId).catchError(
+                (Object e) => log('reportConnected failed', error: e)));
           } else if (_phase == EnginePhase.incoming && !_accepting) {
             // Accepted, and not by this device: the server rings every device
             // the callee owns, and another one of them answered. Only the
