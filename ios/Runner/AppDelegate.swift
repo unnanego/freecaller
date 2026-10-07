@@ -49,6 +49,9 @@ import flutter_callkit_incoming
     // Ask once for Siri so «Позвони Аиде через Звонилку» can reach the app.
     INPreferences.requestSiriAuthorization { _ in }
 
+    // Pass the session and contacts to the Apple Watch app, if there is one.
+    WatchSync.shared.activate()
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -207,6 +210,9 @@ import flutter_callkit_incoming
     // setVocabularyStrings with an empty set is not documented to clear it, and
     // skipping the call (the old `if !names.isEmpty`) left the previous
     // account's family names taught to Siri on a signed-out phone.
+    // The watch app calls the same people (and an empty list signs it out).
+    WatchSync.shared.push(contacts: contacts)
+
     let names = contacts.compactMap { $0["displayName"] as? String }.filter { !$0.isEmpty }
     if names.isEmpty {
       INVocabulary.shared().removeAllVocabularyStrings()

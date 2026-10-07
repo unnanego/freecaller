@@ -82,6 +82,7 @@ onRecordCreateRequest((e) => {
     e.record.set("acceptedAt", "")
     e.record.set("endedAt", "")
     e.record.set("endedBy", "")
+    e.record.set("answeredOn", "")
   }
 
   e.next()
@@ -166,6 +167,24 @@ onRecordUpdateRequest((e) => {
       endedBy !== auth.id
     ) {
       throw new BadRequestError("endedBy must be the signed-in account")
+    }
+  }
+
+  // `answeredOn` names the device that answered or declined, and decides who
+  // gets the answered-elsewhere cancel push below: every one of the callee's
+  // devices EXCEPT it. It is written once, in the same request that takes the
+  // call out of `ringing` to accepted|declined (which the owner check further
+  // down already limits to the callee), and never again — otherwise it could be
+  // pointed at the device that is actually on the call, and the cancel push
+  // would hang that call up.
+  const answeredOn = e.record.getString("answeredOn")
+  if (answeredOn !== previous.getString("answeredOn")) {
+    if (
+      previous.getString("answeredOn") !== "" ||
+      from !== "ringing" ||
+      (to !== "accepted" && to !== "declined")
+    ) {
+      throw new BadRequestError("answeredOn is only set when answering or declining")
     }
   }
 
@@ -403,6 +422,82 @@ onRecordAfterUpdateSuccess((e) => {
         console.log("cancel push " + e.record.id + ": " + out)
       } catch (err) {
         console.log("cancel push FAILED for " + e.record.id + ": " + err)
+      } finally {
+        try {
+          $os.remove(jobPath)
+        } catch (err) {
+          // best effort
+        }
+      }
+    }
+  }
+
+  e.next()
+}, "calls")
+
+// Answered (or declined) on one of the callee's devices: stop the others.
+//
+// The server rings every device the callee owns, so someone with a phone and a
+// watch is rung on both. The phone app notices on its own when another device
+// takes the call (its call watch sees `accepted`; CallEngine tears the ring down
+// without writing anything), but that takes up to one reconcile tick, and a
+// ringing watch has no call watch at all. A cancel push stops either at once.
+//
+// It must never reach the device that answered: on iOS a cancel push for a call
+// that is up ends it. So it only goes out when that device named itself in
+// `answeredOn` (the watch always does; phone builds before it never do, and for
+// those nothing changes) and it skips that device. The iPhone handles a cancel
+// for a call it was merely ringing exactly like the caller hanging up: the ring
+// goes, and the `declined` write that follows is refused by the server because
+// the call is no longer `ringing` — harmless, and CallEngine already expects it
+// (see the comment in its _teardown about another device taking the ring).
+//
+// Self-contained, like every handler here.
+onRecordAfterUpdateSuccess((e) => {
+  const previous = e.record.original()
+  const from = previous.get("state")
+  const to = e.record.get("state")
+  const answeredOn = e.record.getString("answeredOn")
+
+  const createdMs = Date.parse(e.record.getString("created").replace(" ", "T"))
+  const young = isNaN(createdMs) || Date.now() - createdMs < 5 * 60 * 1000
+
+  if (
+    young &&
+    answeredOn !== "" &&
+    from === "ringing" &&
+    (to === "accepted" || to === "declined")
+  ) {
+    const devices = $app.findRecordsByFilter(
+      "devices",
+      "user = {:uid} && deviceId != {:answeredOn}",
+      "",
+      20,
+      0,
+      { uid: e.record.get("calleeId"), answeredOn: answeredOn },
+    )
+
+    if (devices.length > 0) {
+      const job = {
+        kind: "cancel",
+        call: { callId: e.record.id },
+        devices: devices.map((d) => ({
+          id: d.id,
+          platform: d.get("platform"),
+          voipToken: d.get("voipToken"),
+          fcmToken: d.get("fcmToken"),
+        })),
+      }
+
+      const jobPath = "/var/lib/freecaller/job-elsewhere-" + e.record.id + ".json"
+      try {
+        $os.writeFile(jobPath, JSON.stringify(job), 0o600)
+        const out = toString(
+          $os.cmd("python3", "/opt/freecaller/push.py", "--job", jobPath).output(),
+        )
+        console.log("answered-elsewhere push " + e.record.id + ": " + out)
+      } catch (err) {
+        console.log("answered-elsewhere push FAILED for " + e.record.id + ": " + err)
       } finally {
         try {
           $os.remove(jobPath)

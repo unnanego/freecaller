@@ -19,7 +19,11 @@ Job on stdin:
     "call": {"callId": "...", "callerId": "...", "callerName": "...",
              "callerPhone": "...", "video": "true"},
     "devices": [{"id": "...", "platform": "ios",     "voipToken": "..."},
+                {"id": "...", "platform": "watchos", "voipToken": "..."},
                 {"id": "...", "platform": "android", "fcmToken":  "..."}]
+
+`watchos` is the Apple Watch app (docs/watch-plan.md): the same VoIP push as
+`ios`, sent under the watch app's own topic — apns.watchBundleId in push.json.
   }
 
 Result on stdout:
@@ -291,7 +295,9 @@ def is_rejected_provider_token(status: int, response: str) -> bool:
     )
 
 
-def send_voip(cfg: dict, device_token: str, body: dict, deadline: float) -> tuple:
+def send_voip(
+    cfg: dict, device_token: str, body: dict, deadline: float, bundle_id: str
+) -> tuple:
     """POST a VoIP push. Returns (status, response_text).
 
     Tries the second environment only on BadDeviceToken; any other failure is a
@@ -313,7 +319,7 @@ def send_voip(cfg: dict, device_token: str, body: dict, deadline: float) -> tupl
     result = (0, "")
     for host in apns_hosts(cfg):
         try:
-            result = post_voip_fresh(cfg, host, device_token, body, deadline)
+            result = post_voip_fresh(cfg, host, device_token, body, deadline, bundle_id)
         except (DeadlineExceeded, subprocess.TimeoutExpired):
             return 0, "push deadline reached before {} answered".format(host)
         if result[0] == 200 or not is_wrong_environment(*result):
@@ -321,7 +327,7 @@ def send_voip(cfg: dict, device_token: str, body: dict, deadline: float) -> tupl
     return result
 
 
-def post_voip_fresh(cfg, host, device_token, body, deadline) -> tuple:
+def post_voip_fresh(cfg, host, device_token, body, deadline, bundle_id) -> tuple:
     """post_voip, plus one retry with a new JWT if APNs rejected the old one.
 
     The cached JWT is trusted for 45 minutes by our clock. A clock step, a key
@@ -334,15 +340,20 @@ def post_voip_fresh(cfg, host, device_token, body, deadline) -> tuple:
     """
     box = apns_box(cfg)
     jwt = box.get()
-    result = post_voip(cfg, host, device_token, body, jwt, deadline)
+    result = post_voip(cfg, host, device_token, body, jwt, deadline, bundle_id)
     if is_rejected_provider_token(*result):
-        result = post_voip(cfg, host, device_token, body, box.refresh(jwt), deadline)
+        result = post_voip(
+            cfg, host, device_token, body, box.refresh(jwt), deadline, bundle_id
+        )
     return result
 
 
-def post_voip(cfg, host, device_token, body, jwt, deadline) -> tuple:
-    """One VoIP push over HTTP/2 via curl, to one APNs host."""
-    apns = cfg["apns"]
+def post_voip(cfg, host, device_token, body, jwt, deadline, bundle_id) -> tuple:
+    """One VoIP push over HTTP/2 via curl, to one APNs host.
+
+    bundle_id is the app the token belongs to — the iPhone app or the watch app.
+    One APNs key signs for every app in the team, so only the topic differs.
+    """
     budget = transfer_timeout(deadline)
     args = [
         "curl", "-s", "--http2",
@@ -353,7 +364,7 @@ def post_voip(cfg, host, device_token, body, jwt, deadline) -> tuple:
         "--max-time", "{:.1f}".format(budget),
         "-w", "\n%{http_code}",
         "-X", "POST",
-        "-H", "apns-topic: {}.voip".format(apns["bundleId"]),
+        "-H", "apns-topic: {}.voip".format(bundle_id),
         "-H", "apns-push-type: voip",
         "-H", "apns-priority: 10",
         # 0 = deliver now or discard. Never ring a call that already ended.
@@ -512,7 +523,7 @@ def is_unregistered(platform: str, status: int, response: str) -> bool:
                mistyped URL, and pruning on that would let one config mistake
                delete every Android phone in the family on the next call.
     """
-    if platform == "ios":
+    if platform in ("ios", "watchos"):
         return (
             status == 410
             or "BadDeviceToken" in response
@@ -534,10 +545,16 @@ def send_one(cfg: dict, kind: str, call: dict, device: dict, deadline: float) ->
         "error": None,
     }
     try:
-        if platform == "ios":
+        if platform in ("ios", "watchos"):
             token = device.get("voipToken")
             if not token:
-                raise ValueError("ios device has no voipToken")
+                raise ValueError("{} device has no voipToken".format(platform))
+            if platform == "ios":
+                bundle_id = cfg["apns"]["bundleId"]
+            else:
+                bundle_id = cfg["apns"].get("watchBundleId")
+                if not bundle_id:
+                    raise ValueError("apns.watchBundleId is not configured")
             # Cancels are VoIP too: the push must still wake the device so
             # PushKit can dismiss the CallKit ring instead of letting it run
             # to the 45s timeout.
@@ -552,7 +569,7 @@ def send_one(cfg: dict, kind: str, call: dict, device: dict, deadline: float) ->
                     "video": call.get("video", "false"),
                 }
             )
-            status, response = send_voip(cfg, token, body, deadline)
+            status, response = send_voip(cfg, token, body, deadline, bundle_id)
 
         elif platform == "android":
             token = device.get("fcmToken")

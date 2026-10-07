@@ -6,7 +6,10 @@
     "",
     "apns.env: 'production' for App Store / TestFlight builds,",
     "          'sandbox' for builds signed with a development profile.",
-    "          Wrong value = APNs returns 400 BadDeviceToken for valid tokens."
+    "          Wrong value = APNs returns 400 BadDeviceToken for valid tokens.",
+    "apns.watchBundleId: the Apple Watch app (docs/watch-plan.md). Same key,",
+    "          same team — only the push topic differs. Leave it out and",
+    "          watch devices fail to push with a clear error; phones are unaffected."
   ],
 
   "apns": {
@@ -14,6 +17,7 @@
     "keyId": "REPLACE_WITH_APNS_KEY_ID",
     "teamId": "R9577QC7DM",
     "bundleId": "com.unnanego.freecaller",
+    "watchBundleId": "com.unnanego.freecaller.watchkitapp",
     "env": "production"
   },
 

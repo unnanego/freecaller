@@ -1,0 +1,31 @@
+[Unit]
+Description=freecaller watch-bridge (Apple Watch <-> LiveKit audio relay)
+After=network.target pocketbase.service livekit.service
+
+[Service]
+Type=simple
+ExecStart=/opt/watch-bridge/watch-bridge
+Environment=BRIDGE_LISTEN=127.0.0.1:8095
+Environment=PB_URL=http://127.0.0.1:8090
+# Straight to LiveKit on loopback instead of out through Caddy and back in.
+# Port 7880 is firewalled from everything but lo, which is exactly this.
+Environment=LIVEKIT_URL=ws://127.0.0.1:7880
+Environment=BRIDGE_MAX_SESSIONS=6
+Environment=BRIDGE_DETACH_GRACE=15s
+# 1 while testing on the watch (docs/watch-plan.md, spike 1); 0 afterwards.
+Environment=BRIDGE_ECHO=1
+Restart=always
+RestartSec=3
+
+# It holds no secrets, writes no files and needs no privileges.
+DynamicUser=yes
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# The box has 970 MB and runs PocketBase and LiveKit too. A bridge that leaks
+# must be the thing that dies, not them. Idle RSS is ~20 MB.
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

@@ -32,6 +32,8 @@ waking an Android phone needs it. All your own infra.
 | `lib/` | Flutter app (services/call_engine.dart is the call state machine) |
 | `ios/Runner/AppDelegate.swift` | PushKit→CallKit synchronous report, WebRTC audio-session bridge, Siri handoff |
 | `ios/SiriIntents/` | SiriKit Intents extension (INStartCallIntent) |
+| `ios/FreecallerWatch/` | Apple Watch app — a standalone internet-only client ([plan](docs/watch-plan.md)) |
+| `deploy/watch-bridge/` | Go relay that seats the watch in LiveKit calls (watchOS has no WebRTC) |
 | `deploy/pocketbase/` | Backend: schema migrations, hooks (call state machine, LiveKit tokens, push fan-out, contacts), APNs/FCM senders |
 | `tools/admin.mjs` | Family roster provisioning CLI |
 | `deploy/livekit/` | Self-hosted LiveKit media server (Docker Compose) |
