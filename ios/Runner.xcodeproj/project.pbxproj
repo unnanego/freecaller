@@ -8,8 +8,10 @@
 
 /* Begin PBXBuildFile section */
 		08DB43D01E6B52A1FD6C8284 /* ContactsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8973D42E65573442D3BFFBEB /* ContactsStore.swift */; };
+		0C9C90BFB8F27801287F8841 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 970AF644F98BC0EB5D92341D /* Assets.xcassets */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		1B2D751DD537F9920221B745 /* IntentHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657F7A6A9C1E729CF5B2FFF4 /* IntentHandler.swift */; };
+		202B6F3C97D36B5B75A3DBEA /* FreecallerWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = F59DA8CE42116BAA492D11E4 /* FreecallerWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		20BAD139C70E50BDC976BCCB /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 09CD6E28C2F1FAC6B9A92569 /* Pods_RunnerTests.framework */; };
 		20F58771ECD94FC66CFDF545 /* OpusCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD634BCF7F7F76A8B70BC9B3 /* OpusCodec.swift */; };
 		2EC9D4A531534DC4CC8ED276 /* CallController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1CFB21B6C7E60594646DD28 /* CallController.swift */; };
@@ -46,6 +48,13 @@
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
 		};
+		5D543B14E7410ADBF0EA9FA5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E3B4DC8250EDDF3435A70B54;
+			remoteInfo = FreecallerWatch;
+		};
 		E103E1C7D15BE2AD119897CD /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
@@ -75,6 +84,17 @@
 			files = (
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4B608B2978412C3001217BC /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				202B6F3C97D36B5B75A3DBEA /* FreecallerWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -107,6 +127,7 @@
 		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		8973D42E65573442D3BFFBEB /* ContactsStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContactsStore.swift; path = SiriIntents/ContactsStore.swift; sourceTree = "<group>"; };
+		970AF644F98BC0EB5D92341D /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
 		97C146EE1CF9000F007C117D /* Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runner.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -119,6 +140,7 @@
 		A4A838D922FA50C7A5B7F793 /* FreecallerWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FreecallerWatchApp.swift; sourceTree = "<group>"; };
 		A6E03D976A1F9CFB087EED39 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		B1CFB21B6C7E60594646DD28 /* CallController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CallController.swift; sourceTree = "<group>"; };
+		C55365C5CEA870AB11C6FD66 /* FreecallerWatch.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = FreecallerWatch.xcconfig; sourceTree = "<group>"; };
 		CDB39A947BF8273EDA7D174E /* AppSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppSession.swift; sourceTree = "<group>"; };
 		CF3CF4F53941436972840126 /* SiriIntents.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SiriIntents.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D19F9C0633792C5F3A6A98F2 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
@@ -222,6 +244,8 @@
 				74328256053A96442650E8CC /* Views.swift */,
 				3DFCA4403AE8FEDE2DA130A6 /* Info.plist */,
 				61770FC869E143E8B5BC1DC6 /* FreecallerWatch.entitlements */,
+				C55365C5CEA870AB11C6FD66 /* FreecallerWatch.xcconfig */,
+				970AF644F98BC0EB5D92341D /* Assets.xcassets */,
 			);
 			name = FreecallerWatch;
 			path = FreecallerWatch;
@@ -352,12 +376,14 @@
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				1ED5C98E77136BF97B3B5F80 /* Embed App Extensions */,
+				D4B608B2978412C3001217BC /* Embed Watch Content */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				E02222D15869CF7D3AF8D717 /* PBXTargetDependency */,
+				105823D56A8298E5FA492061 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -438,6 +464,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0C9C90BFB8F27801287F8841 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -596,6 +623,12 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		105823D56A8298E5FA492061 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = FreecallerWatch;
+			target = E3B4DC8250EDDF3435A70B54 /* FreecallerWatch */;
+			targetProxy = 5D543B14E7410ADBF0EA9FA5 /* PBXContainerItemProxy */;
+		};
 		331C8086294A63A400263BE5 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
@@ -734,12 +767,13 @@
 		};
 		2A8F3566E055889F2AE9A481 /* Profile */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C55365C5CEA870AB11C6FD66 /* FreecallerWatch.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = FreecallerWatch/FreecallerWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = R9577QC7DM;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -747,13 +781,16 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Звонилка";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Микрофон нужен, чтобы вас слышали во время звонка";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.unnanego.freecaller;
 				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.unnanego.freecaller.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = NO;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_STRICT_CONCURRENCY = minimal;
@@ -1000,12 +1037,13 @@
 		};
 		9E3B3D1C795853E8A722EE43 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C55365C5CEA870AB11C6FD66 /* FreecallerWatch.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = FreecallerWatch/FreecallerWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = R9577QC7DM;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1013,13 +1051,16 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Звонилка";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Микрофон нужен, чтобы вас слышали во время звонка";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.unnanego.freecaller;
 				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.unnanego.freecaller.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = NO;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_STRICT_CONCURRENCY = minimal;
@@ -1061,12 +1102,13 @@
 		};
 		D147086C531989D28D01487E /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C55365C5CEA870AB11C6FD66 /* FreecallerWatch.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = FreecallerWatch/FreecallerWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = R9577QC7DM;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1074,13 +1116,16 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Звонилка";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Микрофон нужен, чтобы вас слышали во время звонка";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.unnanego.freecaller;
 				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.unnanego.freecaller.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = NO;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_STRICT_CONCURRENCY = minimal;

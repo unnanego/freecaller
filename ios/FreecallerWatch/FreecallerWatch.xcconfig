@@ -1,0 +1,8 @@
+// Version numbers for the watch app, from the one place they are written.
+//
+// The watch app ships inside the iPhone app, and App Store Connect rejects a
+// bundle whose version differs from the app around it (ITMS-90473, the same
+// trap SiriIntents.xcconfig describes). Generated.xcconfig is where
+// `flutter build` writes FLUTTER_BUILD_NAME and FLUTTER_BUILD_NUMBER from
+// pubspec; included directly so none of the Pods-Runner settings follow.
+#include "../Flutter/Generated.xcconfig"
