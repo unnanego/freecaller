@@ -156,6 +156,24 @@ onRecordUpdateRequest((e) => {
     }
   }
 
+  // A finished call is history, and history is not rewritten. Re-sending the
+  // terminal state used to count as a harmless no-op (the same-state shortcut
+  // below), but it carried endedBy and endedAt along with it, so whichever side
+  // wrote `ended` LAST became the one who hung up, at the time it wrote it — a
+  // late teardown on one phone could take the credit for the other side's
+  // hang-up. Only a request that changes none of these still goes through, so
+  // a duplicate write of identical values is not an error.
+  const TERMINAL = ["declined", "cancelled", "missed", "ended"]
+  if (isAppUser && TERMINAL.indexOf(from) !== -1) {
+    const frozen = ["state", "endedBy", "endedAt", "acceptedAt", "answeredOn"]
+    for (let i = 0; i < frozen.length; i++) {
+      const field = frozen[i]
+      if (e.record.getString(field) !== previous.getString(field)) {
+        throw new BadRequestError("call is over; " + field + " is final")
+      }
+    }
+  }
+
   // `endedBy` is a claim about who hung up, shown in the history; nobody gets
   // to make it on someone else's behalf. Only checked when it changes, so a
   // partial PATCH that leaves it alone is never affected.

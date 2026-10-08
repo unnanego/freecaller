@@ -313,6 +313,25 @@ check 200 "$(code "$R")" "accepted -> ended is legal (either side, endedBy = sel
 R=$(req PATCH "/api/collections/calls/records/$CALL" "$A_TOK" '{"state":"accepted"}')
 reject "$(code "$R")" "ended -> accepted is ILLEGAL (terminal state is final)"
 
+# Re-sending `ended` used to slip through the same-state shortcut and rewrite
+# who hung up, and when.
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$B_TOK" "{\"state\":\"ended\",\"endedBy\":\"$BOB\"}")
+reject "$(code "$R")" "ended -> ended CANNOT rewrite endedBy (the other side claiming the hang-up)"
+
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$A_TOK" '{"state":"ended","endedAt":"2030-01-01 00:00:00.000Z"}')
+reject "$(code "$R")" "ended -> ended CANNOT rewrite endedAt"
+
+R=$(req PATCH "/api/collections/calls/records/$CALL" "$A_TOK" '{"state":"ended"}')
+check 200 "$(code "$R")" "re-sending ended with nothing else changed is still a no-op"
+
+ENDED_BY=$(body "$(req GET "/api/collections/calls/records/$CALL" "$A_TOK")" | jqp 'd["endedBy"]')
+if [ "$ENDED_BY" = "$ALICE" ]; then
+  printf '  \033[32mPASS\033[0m    -> endedBy still names who really hung up\n'
+else
+  printf '  \033[31mFAIL\033[0m    -> endedBy became %s\n' "$ENDED_BY"
+  FAILED=$((FAILED+1))
+fi
+
 R=$(req DELETE "/api/collections/calls/records/$CALL" "$A_TOK")
 reject "$(code "$R")" "call history is NOT client-deletable"
 
