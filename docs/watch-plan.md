@@ -75,15 +75,16 @@ logic bugs are fixed. Still, expect a round of compile fixes.
 - `calls.answeredOn` is the `deviceId` of the device that answered or declined.
   It can be set only by the callee, only in the request that leaves `ringing`,
   and only once. When it's set, the server sends a cancel push to the callee's
-  **other** devices, so the iPhone stops ringing when the watch answers. The
-  answering device is skipped because a cancel push for a call that's up hangs
-  it up. Phone builds never set it, so for them nothing changes. The phone also
-  copes with a watch answering anyway: `CallEngine` sees `accepted` and drops
-  its ring (`call_engine.dart`, the "another device answered" branch), and its
-  refused `declined` write is the case `_teardown` already expects.
-- The watch, in turn, polls the call record while it rings, so it notices the
-  phone answering. The phone doesn't set `answeredOn`, so it sends no push the
-  other way.
+  **other** devices, so every other phone, tablet or watch on the account
+  stops ringing when one of them answers or declines. The answering device is
+  skipped because a cancel push for a call that's up hangs it up. The watch and
+  the Flutter app (`CallRepo.setState`) both set it; builds from before it
+  don't, and for those nothing changes. A device that misses the push still
+  copes: `CallEngine` sees `accepted` and drops its ring (`call_engine.dart`,
+  the "another device answered" branch), and its refused `declined` write is
+  the case `_teardown` already expects.
+- The watch also polls the call record while it rings, as a backstop for a
+  lost cancel push.
 
 ### The watch app
 
@@ -229,5 +230,3 @@ notice a gap.
 - Recents on the watch
 - Volume on the Digital Crown during a call
 - Sign-in on the watch itself (emailed code), for a watch without an iPhone
-- The phone app setting `answeredOn` too, so a ringing watch stops instantly
-  instead of on its next poll

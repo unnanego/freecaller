@@ -97,7 +97,7 @@ Future<void> main() async {
   final services = AppServices(
     auth: auth,
     users: UserRepo(pb),
-    calls: CallRepo(pb),
+    calls: CallRepo(pb, deviceId: auth.deviceId),
     livekit: LiveKitService(pb, diagnostics: diagnostics),
     callUi: callUi,
     intents: Platform.isIOS ? IosIntentsBridge() : NoopIntentsBridge(),

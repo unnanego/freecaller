@@ -19,9 +19,13 @@ import 'models.dart';
 /// [watchCall] seeds itself from the server on listen and re-reconciles on a
 /// timer, with the subscription only there to make the common case instant.
 class CallRepo {
-  CallRepo(this._pb);
+  CallRepo(this._pb, {required this._deviceId});
 
   final PocketBase _pb;
+
+  /// This install's id (AuthService.deviceId), the one its `devices` record
+  /// is keyed by.
+  final Future<String> Function() _deviceId;
 
   RecordService get _calls => _pb.collection(Config.pbCallsCollection);
 
@@ -54,9 +58,20 @@ class CallRepo {
     // Illegal transitions are rejected server-side by pb_hooks/calls.pb.js,
     // which also makes this write a compare-and-swap: of two racing accepts,
     // the second finds the call is no longer `ringing` and throws.
+    //
+    // Answering or declining also names this device in `answeredOn`. One
+    // account can be signed in on several phones, tablets and a watch, all
+    // rung at once; the server sends a cancel push to every one of them except
+    // the device named here, so the rest stop ringing at once instead of on
+    // their next reconcile. Only the callee writes these two states, and only
+    // out of `ringing`, which is exactly when the server accepts the field.
     final now = DateTime.now().toUtc().toIso8601String();
+    final answering =
+        state == CallState.accepted || state == CallState.declined;
+    final answeredOn = answering ? await _deviceId() : null;
     await _calls.update(callId, body: {
       'state': state.name,
+      'answeredOn': ?answeredOn,
       if (state == CallState.accepted) 'acceptedAt': now,
       if (state == CallState.ended ||
           state == CallState.declined ||
@@ -77,9 +92,10 @@ class CallRepo {
   /// `accepted` call it does not believe is its own. So re-read: if the call is
   /// `accepted`, the accept is taken as ours.
   ///
-  /// That is a guess when the request never arrived and another device
-  /// accepted in the same instant; telling those apart needs an `acceptedBy`
-  /// on the record, which does not exist yet.
+  /// `answeredOn` tells the two apart when the request never arrived and
+  /// another device accepted in the same instant: it names the device that
+  /// won. It is empty only when the winner is a build from before the field,
+  /// and then the accept is still taken as ours, as it always was.
   Future<void> accept(String callId) async {
     try {
       await setState(callId, CallState.accepted);
@@ -87,8 +103,15 @@ class CallRepo {
       // statusCode 0 is the SDK's "no HTTP response"; anything else is the
       // server answering, and its answer was no.
       if (e.statusCode != 0) rethrow;
-      final doc = await getCall(callId);
-      if (doc?.state != CallState.accepted) rethrow;
+      final RecordModel record;
+      try {
+        record = await _calls.getOne(callId);
+      } on ClientException {
+        throw e;
+      }
+      if (record.get<String>('state', '') != CallState.accepted.name) rethrow;
+      final winner = record.get<String>('answeredOn', '');
+      if (winner.isNotEmpty && winner != await _deviceId()) rethrow;
     }
   }
 
