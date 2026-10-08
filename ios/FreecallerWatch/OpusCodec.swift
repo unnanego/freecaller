@@ -1,5 +1,5 @@
 import AVFoundation
-import AudioToolbox
+import CoreAudioTypes
 
 enum CodecError: Error {
   case unavailable(String)
