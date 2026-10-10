@@ -58,6 +58,11 @@ final class CallController: NSObject, ObservableObject {
   private var voipToken: String?
   private var ringTimer: Timer?
   private var ringPoll: Timer?
+  /// Sends the log to the server every few seconds while a call is up (the
+  /// only time watchOS lets the app use the network freely). A watch is not
+  /// next to a Mac, and reading a log off its screen means typing it out.
+  private var logTimer: Timer?
+  private var logFlushing = false
   private var reconnectDeadline: Date?
   private var bridgeFatal = false
   private var pendingOutgoing: (uuid: UUID, name: String, calleeId: String, isEcho: Bool)?
@@ -451,6 +456,31 @@ final class CallController: NSObject, ObservableObject {
     }
     audio.setMuted(muted)
     if let c = call, c.outgoing, !c.accepted, !c.isEcho { audio.setTone(.ringback) }
+    logTimer?.invalidate()
+    logTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+      Task { @MainActor in self.flushLog() }
+    }
+  }
+
+  /// One diagnostics record per batch, at most ~1900 characters (the
+  /// collection's `detail` holds 2000). Lines that fail to send go back in the
+  /// queue for the next tick, or the next call.
+  private func flushLog() {
+    guard !logFlushing, let token = session.token else { return }
+    let lines = Log.takeUnsent(maxChars: 1900)
+    guard !lines.isEmpty else { return }
+    let userId = session.userId
+    let callId = call.map { $0.isEcho ? "echo" : $0.callId } ?? ""
+    logFlushing = true
+    Task {
+      defer { self.logFlushing = false }
+      do {
+        try await PocketBase.shared.postDiagnostics(
+          userId: userId, callId: callId, detail: lines.joined(separator: "\n"), token: token)
+      } catch {
+        Log.putBack(lines)
+      }
+    }
   }
 
   // MARK: - bridge
@@ -550,6 +580,9 @@ final class CallController: NSObject, ObservableObject {
     reconnectDeadline = nil
     closeBridge(bye: true)
     audio.stop()
+    logTimer?.invalidate()
+    logTimer = nil
+    flushLog()  // the final playout line; may be refused once the call is gone
     call = nil
     phase = .idle
     muted = false
@@ -566,6 +599,11 @@ extension CallController: BridgeClientDelegate {
     if resumed {
       audio.resetPlayout()
       Log.info("bridge resumed")
+    }
+    if c.isEcho, c.connectedAt == nil {
+      // Nobody answers an echo test; without this CallKit shows «calling»
+      // for the whole test.
+      provider.reportOutgoingCall(with: c.uuid, connectedAt: Date())
     }
     if c.isEcho || (!c.outgoing && c.accepted) || (c.outgoing && c.accepted) {
       markConnected()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"regexp"
 	"sync"
@@ -195,11 +196,13 @@ func (b *bridge) handleEcho(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(16 << 10)
 
+	log.Printf("echo: connected")
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	typ, data, err := ws.Read(ctx)
 	cancel()
 	var hello controlMsg
 	if err != nil || typ != websocket.MessageText || json.Unmarshal(data, &hello) != nil || hello.Type != "hello" {
+		log.Printf("echo: no valid hello (err=%v)", err)
 		sendErrorAndClose(ws, errBadRequest, "first frame must be a hello")
 		return
 	}
@@ -207,6 +210,7 @@ func (b *bridge) handleEcho(w http.ResponseWriter, r *http.Request) {
 	err = b.pb.getSelf(ctx, hello.Token)
 	cancel()
 	if err != nil {
+		log.Printf("echo: token rejected: %v", err)
 		sendErrorAndClose(ws, protocolCode(err), "token rejected")
 		return
 	}
@@ -214,11 +218,16 @@ func (b *bridge) handleEcho(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel = context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	if err := writeJSON(ctx, ws, controlMsg{Type: "ready", Resumed: boolPtr(false)}); err != nil {
+		log.Printf("echo: could not send ready: %v", err)
 		return
 	}
+	log.Printf("echo: ready sent")
+	frames, texts := 0, 0
+	defer func() { log.Printf("echo: done, %d audio frames bounced, %d text frames", frames, texts) }()
 	for {
 		typ, data, err := ws.Read(ctx)
 		if err != nil {
+			log.Printf("echo: read ended: %v", err)
 			_ = ws.Close(websocket.StatusNormalClosure, "")
 			return
 		}
@@ -226,6 +235,9 @@ func (b *bridge) handleEcho(w http.ResponseWriter, r *http.Request) {
 			if err := ws.Write(ctx, websocket.MessageBinary, data); err != nil {
 				return
 			}
+			frames++
+		} else {
+			texts++
 		}
 	}
 }

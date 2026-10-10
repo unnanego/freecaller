@@ -28,6 +28,7 @@
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		824EFA6034960D3C6151E2D9 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A6E03D976A1F9CFB087EED39 /* Foundation.framework */; };
+		85018663068C6F759FC144CB /* Speedup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D2B9E9B541C21633559C043 /* Speedup.swift */; };
 		854B18C0BA745E786D94924E /* SiriIntents.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = CF3CF4F53941436972840126 /* SiriIntents.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
@@ -136,6 +137,7 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9896460C28EB91396AC57C8E /* Intents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Intents.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Intents.framework; sourceTree = DEVELOPER_DIR; };
+		9D2B9E9B541C21633559C043 /* Speedup.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Speedup.swift; sourceTree = "<group>"; };
 		A3F2F29CC797A2E15E357385 /* BridgeClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BridgeClient.swift; sourceTree = "<group>"; };
 		A4A838D922FA50C7A5B7F793 /* FreecallerWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FreecallerWatchApp.swift; sourceTree = "<group>"; };
 		A6E03D976A1F9CFB087EED39 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
@@ -246,6 +248,7 @@
 				61770FC869E143E8B5BC1DC6 /* FreecallerWatch.entitlements */,
 				C55365C5CEA870AB11C6FD66 /* FreecallerWatch.xcconfig */,
 				970AF644F98BC0EB5D92341D /* Assets.xcassets */,
+				9D2B9E9B541C21633559C043 /* Speedup.swift */,
 			);
 			name = FreecallerWatch;
 			path = FreecallerWatch;
@@ -589,6 +592,7 @@
 				20F58771ECD94FC66CFDF545 /* OpusCodec.swift in Sources */,
 				EF427BECB511D157980EDCE1 /* PocketBase.swift in Sources */,
 				381B213A67649FA5E1E37CC8 /* Views.swift in Sources */,
+				85018663068C6F759FC144CB /* Speedup.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

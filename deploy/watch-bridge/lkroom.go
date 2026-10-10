@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"sync"
 	"time"
 
@@ -115,19 +116,28 @@ func (r *lkRoom) peersChanged() {
 
 // pump forwards one remote audio track to the watch, packet for packet.
 func (r *lkRoom) pump(track *webrtc.TrackRemote) {
-	red := track.Codec().MimeType == "audio/red"
+	mime := track.Codec().MimeType
+	red := mime == "audio/red"
+	var read, redBad, empty int
+	log.Printf("downlink track %s: %s", track.ID(), mime)
+	defer func() {
+		log.Printf("downlink track %s done: %d packets read, %d bad RED, %d empty", track.ID(), read, redBad, empty)
+	}()
 	for {
 		pkt, _, err := track.ReadRTP()
 		if err != nil {
 			return
 		}
+		read++
 		payload := pkt.Payload
 		if red {
 			if payload, err = redPrimary(payload); err != nil {
+				redBad++
 				continue
 			}
 		}
 		if len(payload) == 0 {
+			empty++
 			continue
 		}
 		// The RTP buffer is reused by the next ReadRTP.

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -61,6 +62,16 @@ type session struct {
 	closed    bool
 	closeOnce sync.Once
 	done      chan struct{}
+
+	// Audio counters for the close log line. A call that is silent one way is
+	// otherwise impossible to place: these say whether the room sent anything,
+	// whether it reached the socket, and whether the watch sent anything back.
+	roomIn    atomic.Int64 // frames the room delivered to us
+	noWatch   atomic.Int64 // …of which arrived while no watch was attached
+	queueDrop atomic.Int64 // …of which were dropped because the watch lagged
+	sentWatch atomic.Int64 // frames written to the watch's socket
+	watchIn   atomic.Int64 // frames the watch sent us
+	roomOut   atomic.Int64 // …of which were published to the room
 }
 
 // attachment is one WebSocket bound to a session.
@@ -180,6 +191,7 @@ func (s *session) reader(att *attachment) (bye bool) {
 			if err != nil {
 				continue
 			}
+			s.watchIn.Add(1)
 			dur := opusDuration(f.Payload)
 			if dur == 0 {
 				continue
@@ -187,6 +199,8 @@ func (s *session) reader(att *attachment) (bye bool) {
 			if room := s.currentRoom(); room != nil {
 				if err := room.WriteOpus(f.Payload, dur); err != nil {
 					s.logf("uplink write: %v", err)
+				} else {
+					s.roomOut.Add(1)
 				}
 			}
 		case websocket.MessageText:
@@ -235,6 +249,7 @@ func (s *session) writer(att *attachment) {
 			if err != nil {
 				return
 			}
+			s.sentWatch.Add(1)
 		}
 	}
 }
@@ -289,7 +304,9 @@ func (s *session) close(reason string) {
 			room.Close()
 		}
 		close(s.done)
-		s.logf("closed: %s", reason)
+		s.logf("closed: %s; audio: room->bridge %d (no watch %d, dropped %d), bridge->watch %d, watch->bridge %d, bridge->room %d",
+			reason, s.roomIn.Load(), s.noWatch.Load(), s.queueDrop.Load(), s.sentWatch.Load(),
+			s.watchIn.Load(), s.roomOut.Load())
 	})
 }
 
@@ -362,10 +379,12 @@ func (s *session) poll() {
 // ---- roomEvents ---------------------------------------------------------------
 
 func (s *session) onAudio(f audioFrame) {
+	s.roomIn.Add(1)
 	s.mu.Lock()
 	att := s.att
 	s.mu.Unlock()
 	if att == nil {
+		s.noWatch.Add(1)
 		return // detached: nobody to play it to
 	}
 	frame := encodeAudio(f)
@@ -377,6 +396,7 @@ func (s *session) onAudio(f audioFrame) {
 	// Full: drop the oldest frame, keep the newest.
 	select {
 	case <-att.audio:
+		s.queueDrop.Add(1)
 	default:
 	}
 	select {

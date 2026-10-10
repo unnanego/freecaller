@@ -158,6 +158,19 @@ final class PocketBase {
     let expand: Expand?
   }
 
+  /// One batch of the watch's log, into the same write-only `diagnostics`
+  /// collection the Android app reports audio routes to (read with
+  /// tools/diagnostics.mjs). Only a superuser can read it back.
+  func postDiagnostics(userId: String, callId: String, detail: String, token: String) async throws {
+    _ = try await send(
+      makeRequest(
+        "POST", "/api/collections/diagnostics/records", token: token, query: [:],
+        body: [
+          "userUid": userId, "callId": callId, "platform": "watchos", "event": "watch-log",
+          "detail": detail,
+        ]))
+  }
+
   private func makeRequest(
     _ method: String, _ path: String, token: String,
     query: [String: String], body: [String: Any]?

@@ -77,7 +77,26 @@ final class AudioPipeline {
     guard !running else { return }
     encoder = try OpusEncoder(pcm: pcmFormat)
     decoder = try OpusDecoder(pcm: pcmFormat)
+    stats = Stats()
+    pending.removeAll()
+    running = true  // the playout chain buildEngine starts checks it
+    do {
+      try buildEngine()
+    } catch {
+      running = false
+      teardownEngine()
+      throw error
+    }
+    startStatsTimer()
+  }
 
+  /// Builds a fresh engine and starts the playout chain. Called at start and
+  /// again after every configuration change: once CallKit activates the
+  /// session and voice processing comes on, the system reconfigures audio and
+  /// the old engine's nodes are reset. Restarting that engine brought the mic
+  /// back but left the player silent (2026-10-09: the peer heard the watch,
+  /// the watch played nothing), so a configuration change gets a new engine.
+  private func buildEngine() throws {
     let engine = AVAudioEngine()
     let input = engine.inputNode
     do {
@@ -104,36 +123,46 @@ final class AudioPipeline {
 
     self.engine = engine
     self.player = player
-    running = true
     generation &+= 1
-    pending.removeAll()
     // Three 20 ms buffers in flight: enough to never starve the player, short
     // enough not to add noticeable delay.
     for _ in 0..<3 { scheduleNext() }
 
-    // A route change (headphones connecting, say) stops the engine; without a
-    // restart the call goes silent until it ends.
+    // A route change (headphones connecting, CallKit taking the session,
+    // voice processing switching on) stops the engine; without a rebuild the
+    // call goes silent until it ends.
     configObserver = NotificationCenter.default.addObserver(
       forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
     ) { [weak self] _ in
-      self?.queue.async { self?.restartAfterConfigurationChange() }
+      self?.queue.async { self?.rebuildAfterConfigurationChange() }
     }
-    Log.info("audio started (mic \(Int(inFormat.sampleRate)) Hz)")
+    let out = engine.outputNode.outputFormat(forBus: 0)
+    let route = AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType.rawValue }
+    Log.info("audio started (mic \(Int(inFormat.sampleRate)) Hz, out \(Int(out.sampleRate)) Hz x\(out.channelCount), route \(route))")
+  }
+
+  /// Tears the engine down without touching the codecs, the jitter buffer or
+  /// the running flag.
+  private func teardownEngine() {
+    if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+    configObserver = nil
+    generation &+= 1
+    engine?.inputNode.removeTap(onBus: 0)
+    player?.stop()
+    engine?.stop()
+    engine = nil
+    player = nil
+    micConverter = nil
   }
 
   func stop() {
     queue.sync {
       guard running else { return }
       running = false
-      generation &+= 1
-      if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
-      configObserver = nil
-      engine?.inputNode.removeTap(onBus: 0)
-      player?.stop()
-      engine?.stop()
-      engine = nil
-      player = nil
-      micConverter = nil
+      statsTimer?.cancel()
+      statsTimer = nil
+      logStats()
+      teardownEngine()
       encoder = nil
       decoder = nil
       jitter.reset()
@@ -156,7 +185,38 @@ final class AudioPipeline {
 
   /// A downlink packet from the bridge. Any thread.
   func receive(seq: UInt16, payload: Data) {
-    queue.async { self.jitter.push(seq: seq, payload: payload) }
+    queue.async {
+      self.stats.received += 1
+      self.jitter.push(seq: seq, payload: payload)
+    }
+  }
+
+  // MARK: - stats
+
+  /// Downlink counters, logged every 5 s and at the end, so a silent call shows
+  /// in Diagnostics whether packets arrived, decoded and were handed to the
+  /// player — and whether the engine is actually running.
+  private struct Stats {
+    var received = 0, played = 0, decodeFailed = 0, lost = 0, empty = 0, rebuilds = 0, sped = 0
+  }
+  private var stats = Stats()
+  private var statsTimer: DispatchSourceTimer?
+
+  private func startStatsTimer() {
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+    timer.schedule(deadline: .now() + 5, repeating: 5)
+    timer.setEventHandler { [weak self] in self?.logStats() }
+    timer.resume()
+    statsTimer = timer
+  }
+
+  private func logStats() {
+    let s = stats
+    Log.info(
+      "playout: in \(s.received), played \(s.played), decode fail \(s.decodeFailed), lost \(s.lost), "
+        + "silence \(s.empty), dropped \(jitter.dropped), underruns \(jitter.underruns), "
+        + "depth \(jitter.target), backlog \(jitter.backlog), sped \(s.sped), rebuilds \(s.rebuilds), engine \(engine?.isRunning == true ? "on" : "off"), "
+        + "player \(player?.isPlaying == true ? "on" : "off")")
   }
 
   /// Forget buffered downlink audio (after a bridge reconnect: the sequence
@@ -219,14 +279,43 @@ final class AudioPipeline {
     }
   }
 
-  private func restartAfterConfigurationChange() {
-    guard running, let engine, let player else { return }
-    Log.info("audio configuration changed — restarting the engine")
+  /// The system reconfigured audio (CallKit took the session, voice
+  /// processing came on, the route changed), which stops the engine and resets
+  /// its nodes.
+  ///
+  /// History: build 22 only restarted the engine — the mic came back but the
+  /// player stayed silent. Build 24 built a whole new engine, and switching
+  /// voice processing on in it raised the next configuration change, so the
+  /// engine never settled and even the mic went quiet. So: keep this engine
+  /// (and its voice processing and mic tap), and replace only the player node,
+  /// which is what a reset leaves broken. Capped, in case it still loops.
+  private func rebuildAfterConfigurationChange() {
+    guard running, let engine else { return }
+    stats.rebuilds += 1
+    guard stats.rebuilds <= 5 else {
+      if stats.rebuilds == 6 { Log.error("audio configuration keeps changing; giving up on restarts") }
+      return
+    }
+    Log.info("audio configuration changed (#\(stats.rebuilds)) — new player, restarting the engine")
     generation &+= 1
+    if let old = player {
+      old.stop()
+      engine.detach(old)
+    }
+    let player = AVAudioPlayerNode()
+    engine.attach(player)
+    engine.connect(player, to: engine.mainMixerNode, format: pcmFormat)
+    self.player = player
     do {
-      try engine.start()
+      if !engine.isRunning {
+        engine.prepare()
+        try engine.start()
+      }
       player.play()
       for _ in 0..<3 { scheduleNext() }
+      let out = engine.outputNode.outputFormat(forBus: 0)
+      let route = AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType.rawValue }
+      Log.info("audio restarted (out \(Int(out.sampleRate)) Hz x\(out.channelCount), route \(route))")
     } catch {
       Log.error("audio restart failed", error)
     }
@@ -236,9 +325,22 @@ final class AudioPipeline {
     if tone != .none { return toneBuffer() }
     switch jitter.pop() {
     case .packet(let data):
-      if let pcm = decoder?.decode(data) { return pcm }
+      if let pcm = decoder?.decode(data) {
+        stats.played += 1
+        // Behind after a stall: play this frame faster to catch up.
+        if jitter.isBehind, let samples = pcm.floatChannelData?[0] {
+          pcm.frameLength = AVAudioFrameCount(Speedup.compress(samples, count: Int(pcm.frameLength)))
+          stats.sped += 1
+        }
+        return pcm
+      }
+      stats.decodeFailed += 1
       return silence()
-    case .lost, .empty:
+    case .lost:
+      stats.lost += 1
+      return silence()
+    case .empty:
+      stats.empty += 1
       return silence()
     }
   }
